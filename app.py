@@ -1,8 +1,5 @@
 from flask import Flask, render_template, request, jsonify, send_file
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
 import csv
 import io
@@ -10,19 +7,6 @@ import time
 from datetime import datetime
 
 app = Flask(__name__)
-
-def get_driver():
-    """Create undetected Chrome driver"""
-    options = uc.ChromeOptions()
-    options.add_argument('--headless=new')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--disable-blink-features=AutomationControlled')
-    options.add_argument('--disable-gpu')
-
-    # Let undetected_chromedriver find Chrome automatically
-    driver = uc.Chrome(options=options, use_subprocess=True)
-    return driver
 
 @app.route('/')
 def index():
@@ -56,78 +40,71 @@ def scrape():
     return jsonify({'results': results})
 
 def find_realtors_in_area(area):
-    """Find realtors in target area using undetected Chrome"""
+    """Find realtors in target area using Playwright"""
     realtors = []
-    driver = None
 
     try:
-        driver = get_driver()
-        url = f"https://www.realtor.com/realestateagents/{area.replace(' ', '-').replace(',', '')}"
-        print(f"Fetching: {url}")
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
 
-        driver.get(url)
-        time.sleep(5)  # Wait for page load
+            url = f"https://www.realtor.com/realestateagents/{area.replace(' ', '-').replace(',', '')}"
+            print(f"Fetching: {url}")
 
-        # Save page for debugging
-        with open('/tmp/page_source.html', 'w') as f:
-            f.write(driver.page_source)
-        print("Page source saved to /tmp/page_source.html")
+            page.goto(url, wait_until='networkidle', timeout=30000)
+            time.sleep(3)
 
-        # Get page source after JS renders
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
+            html = page.content()
+            soup = BeautifulSoup(html, 'html.parser')
 
-        # Look for ANY link with names - be very broad
-        all_links = soup.find_all('a', href=True)
-        print(f"Total links found: {len(all_links)}")
+            # Look for ANY link with names
+            all_links = soup.find_all('a', href=True)
+            print(f"Total links found: {len(all_links)}")
 
-        profile_links = [l for l in all_links if '/realestateagents/' in l.get('href', '')]
-        print(f"Profile links found: {len(profile_links)}")
+            profile_links = [l for l in all_links if '/realestateagents/' in l.get('href', '')]
+            print(f"Profile links found: {len(profile_links)}")
 
-        seen_names = set()
-        for link in all_links:
-            href = link.get('href', '')
-            text = link.get_text(strip=True)
+            seen_names = set()
+            for link in all_links:
+                href = link.get('href', '')
+                text = link.get_text(strip=True)
 
-            # Look for profile links - very broad search
-            if '/realestateagents/' in href and text:
-                print(f"Found link: {text[:50]} -> {href[:80]}")
+                # Look for profile links
+                if '/realestateagents/' in href and text:
+                    print(f"Found link: {text[:50]} -> {href[:80]}")
 
-                # Try to extract name
-                if len(text.split()) >= 2 and len(text) < 100:
-                    full_name = text.strip()
+                    if len(text.split()) >= 2 and len(text) < 100:
+                        full_name = text.strip()
 
-                    if full_name in seen_names:
-                        continue
+                        if full_name in seen_names:
+                            continue
 
-                    name_parts = full_name.split()
-                    firstName = name_parts[0]
-                    lastName = ' '.join(name_parts[1:])
+                        name_parts = full_name.split()
+                        firstName = name_parts[0]
+                        lastName = ' '.join(name_parts[1:])
 
-                    # Build full URL
-                    profile_url = href if href.startswith('http') else f"https://www.realtor.com{href}"
+                        profile_url = href if href.startswith('http') else f"https://www.realtor.com{href}"
 
-                    seen_names.add(full_name)
+                        seen_names.add(full_name)
 
-                    realtors.append({
-                        'firstName': firstName,
-                        'lastName': lastName,
-                        'profileUrl': profile_url,
-                        'phone': '',
-                        'source': 'realtor.com'
-                    })
+                        realtors.append({
+                            'firstName': firstName,
+                            'lastName': lastName,
+                            'profileUrl': profile_url,
+                            'phone': '',
+                            'source': 'realtor.com'
+                        })
 
-                    if len(realtors) >= 20:
-                        break
+                        if len(realtors) >= 20:
+                            break
 
-        print(f"Found {len(realtors)} realtors")
+            print(f"Found {len(realtors)} realtors")
+            browser.close()
 
     except Exception as e:
         print(f"Error scraping area {area}: {e}")
         import traceback
         traceback.print_exc()
-    finally:
-        if driver:
-            driver.quit()
 
     return realtors
 
@@ -161,69 +138,71 @@ def enrich_realtor(lead):
     if not profile_url:
         return result
 
-    driver = None
     try:
-        driver = get_driver()
-        driver.get(profile_url)
-        time.sleep(2)
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(profile_url, wait_until='networkidle', timeout=30000)
+            time.sleep(2)
 
-        # Extract experience
-        exp_text = soup.get_text()
-        if 'year' in exp_text.lower():
-            import re
-            match = re.search(r'(\d+)\s*(?:years?|yrs?)', exp_text, re.IGNORECASE)
-            if match:
-                result['yearsExperience'] = f"{match.group(1)} years"
+            html = page.content()
+            soup = BeautifulSoup(html, 'html.parser')
 
-        # Extract sales numbers
-        numbers = soup.find_all(string=lambda x: x and any(char.isdigit() for char in str(x)))
-        for text in numbers:
-            if 'transaction' in str(text).lower() or 'sale' in str(text).lower():
+            # Extract experience
+            exp_text = soup.get_text()
+            if 'year' in exp_text.lower():
                 import re
-                match = re.search(r'(\d+)', str(text))
-                if match and result['totalSales'] == 0:
-                    result['totalSales'] = int(match.group(1))
-
-            if '12' in str(text) and 'month' in str(text).lower():
-                import re
-                match = re.search(r'(\d+)', str(text))
+                match = re.search(r'(\d+)\s*(?:years?|yrs?)', exp_text, re.IGNORECASE)
                 if match:
-                    result['sales12Months'] = int(match.group(1))
+                    result['yearsExperience'] = f"{match.group(1)} years"
 
-        # Extract email
-        email_elem = soup.find('a', href=lambda x: x and x.startswith('mailto:'))
-        if email_elem:
-            result['email'] = email_elem['href'].replace('mailto:', '')
+            # Extract sales numbers
+            numbers = soup.find_all(string=lambda x: x and any(char.isdigit() for char in str(x)))
+            for text in numbers:
+                if 'transaction' in str(text).lower() or 'sale' in str(text).lower():
+                    import re
+                    match = re.search(r'(\d+)', str(text))
+                    if match and result['totalSales'] == 0:
+                        result['totalSales'] = int(match.group(1))
 
-        # Extract phone
-        if not result['phone']:
-            phone_elem = soup.find('a', href=lambda x: x and x.startswith('tel:'))
-            if phone_elem:
-                result['phone'] = phone_elem.get_text(strip=True)
+                if '12' in str(text) and 'month' in str(text).lower():
+                    import re
+                    match = re.search(r'(\d+)', str(text))
+                    if match:
+                        result['sales12Months'] = int(match.group(1))
 
-        # Extract social media
-        social_links = soup.find_all('a', href=True)
-        for link in social_links:
-            href = link['href']
-            if 'facebook.com' in href:
-                result['socialMedia']['facebook'] = href
-            elif 'linkedin.com' in href:
-                result['socialMedia']['linkedin'] = href
-            elif 'instagram.com' in href:
-                result['socialMedia']['instagram'] = href
-            elif 'twitter.com' in href or 'x.com' in href:
-                result['socialMedia']['twitter'] = href
-            elif 'youtube.com' in href:
-                result['socialMedia']['youtube'] = href
-            elif 'tiktok.com' in href:
-                result['socialMedia']['tiktok'] = href
+            # Extract email
+            email_elem = soup.find('a', href=lambda x: x and x.startswith('mailto:'))
+            if email_elem:
+                result['email'] = email_elem['href'].replace('mailto:', '')
+
+            # Extract phone
+            if not result['phone']:
+                phone_elem = soup.find('a', href=lambda x: x and x.startswith('tel:'))
+                if phone_elem:
+                    result['phone'] = phone_elem.get_text(strip=True)
+
+            # Extract social media
+            social_links = soup.find_all('a', href=True)
+            for link in social_links:
+                href = link['href']
+                if 'facebook.com' in href:
+                    result['socialMedia']['facebook'] = href
+                elif 'linkedin.com' in href:
+                    result['socialMedia']['linkedin'] = href
+                elif 'instagram.com' in href:
+                    result['socialMedia']['instagram'] = href
+                elif 'twitter.com' in href or 'x.com' in href:
+                    result['socialMedia']['twitter'] = href
+                elif 'youtube.com' in href:
+                    result['socialMedia']['youtube'] = href
+                elif 'tiktok.com' in href:
+                    result['socialMedia']['tiktok'] = href
+
+            browser.close()
 
     except Exception as e:
         print(f"Error enriching {lead.get('firstName')} {lead.get('lastName')}: {e}")
-    finally:
-        if driver:
-            driver.quit()
 
     return result
 
