@@ -4,18 +4,33 @@ from bs4 import BeautifulSoup
 import csv
 import io
 import time
+import sys
 from datetime import datetime
 
 app = Flask(__name__)
+
+# Force stdout to flush immediately
+sys.stdout.reconfigure(line_buffering=True)
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
+@app.route('/api/test')
+def test():
+    return jsonify({'status': 'working', 'message': 'API is alive'})
+
 @app.route('/api/scrape', methods=['POST'])
 def scrape():
+    print("=" * 80)
+    print("SCRAPE REQUEST RECEIVED!")
+    print("=" * 80)
+
     data = request.json
+    print(f"Request data: {data}")
+
     mode = data.get('mode')
+    print(f"Mode: {mode}")
 
     results = []
 
