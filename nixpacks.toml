@@ -1,8 +1,2 @@
-[phases.setup]
-nixPkgs = ["python312"]
-
-[phases.install]
-cmds = ["python -m pip install -r requirements.txt", "python -m playwright install --with-deps chromium"]
-
 [start]
-cmd = "gunicorn app:app"
+cmd = "playwright install --with-deps chromium && gunicorn app:app"
