@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Realtor Lead Enrichment</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: white;
+            margin-bottom: 10px;
+            font-size: 36px;
+        }
+        p.subtitle {
+            color: rgba(255,255,255,0.9);
+            margin-bottom: 30px;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 25px;
+        }
+        .tab {
+            flex: 1;
+            padding: 15px;
+            background: #f5f5f5;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .tab.active {
+            background: #667eea;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+        input[type="text"], input[type="file"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 15px;
+            transition: border 0.3s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        button.primary {
+            width: 100%;
+            padding: 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: background 0.3s;
+        }
+        button.primary:hover {
+            background: #5568d3;
+        }
+        button.primary:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .progress {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .results {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .result-item {
+            border: 2px solid #f0f0f0;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: all 0.3s;
+        }
+        .result-item:hover {
+            border-color: #667eea;
+            background: #f9f9ff;
+        }
+        .result-name {
+            font-size: 20px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .result-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #666;
+        }
+        .social-links {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .social-link {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: white;
+            text-decoration: none;
+            font-weight: 600;
+        }
+        .social-link.facebook { background: #1877f2; }
+        .social-link.linkedin { background: #0077b5; }
+        .social-link.instagram { background: #e4405f; }
+        .social-link.twitter { background: #1da1f2; }
+        .social-link.youtube { background: #ff0000; }
+        .social-link.tiktok { background: #000; }
+        button.download {
+            background: #10b981;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        button.download:hover {
+            background: #059669;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Realtor Lead Enrichment</h1>
+        <p class="subtitle">Find and enrich realtor leads from your target areas</p>
+
+        <div class="card">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('area')">Search by Area</button>
+                <button class="tab" onclick="switchTab('csv')">Upload CSV</button>
+            </div>
+
+            <div id="area-tab" class="tab-content active">
+                <label>Enter zip codes or cities (comma-separated)</label>
+                <input type="text" id="area-input" placeholder="e.g., 73102, Oklahoma City, Edmond">
+                <button class="primary" onclick="searchByArea()">Find Realtors</button>
+            </div>
+
+            <div id="csv-tab" class="tab-content">
+                <label>Upload your CSV file</label>
+                <input type="file" id="csv-file" accept=".csv">
+                <p style="font-size: 13px; color: #666; margin-top: 8px;">
+                    CSV should include: firstName, lastName (required), email, phone, city, state (optional)
+                </p>
+                <button class="primary" onclick="uploadCSV()">Enrich Leads</button>
+            </div>
+        </div>
+
+        <div id="progress" class="progress hidden">
+            <div class="spinner"></div>
+            <span id="progress-text">Processing...</span>
+        </div>
+
+        <div id="results" class="results hidden">
+            <div class="result-header">
+                <h2>Results (<span id="result-count">0</span> leads)</h2>
+                <button class="download" onclick="downloadCSV()">Download CSV</button>
+            </div>
+            <div id="results-list"></div>
+        </div>
+    </div>
+
+    <script>
+        let results = [];
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+
+            if (tab === 'area') {
+                document.querySelectorAll('.tab')[0].classList.add('active');
+                document.getElementById('area-tab').classList.add('active');
+            } else {
+                document.querySelectorAll('.tab')[1].classList.add('active');
+                document.getElementById('csv-tab').classList.add('active');
+            }
+        }
+
+        async function searchByArea() {
+            const input = document.getElementById('area-input').value.trim();
+            if (!input) return alert('Please enter at least one area');
+
+            const areas = input.split(',').map(a => a.trim());
+
+            showProgress('Searching for realtors...');
+            hideResults();
+
+            try {
+                const response = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: 'area', areas })
+                });
+
+                const data = await response.json();
+                results = data.results;
+                displayResults();
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                hideProgress();
+            }
+        }
+
+        async function uploadCSV() {
+            const fileInput = document.getElementById('csv-file');
+            const file = fileInput.files[0];
+            if (!file) return alert('Please select a CSV file');
+
+            showProgress('Processing CSV...');
+            hideResults();
+
+            const text = await file.text();
+            const lines = text.split('\n');
+            const headers = lines[0].split(',').map(h => h.trim());
+            const leads = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                if (!lines[i].trim()) continue;
+                const values = lines[i].split(',');
+                const lead = {};
+                headers.forEach((header, idx) => {
+                    lead[header] = values[idx]?.trim() || '';
+                });
+                leads.push(lead);
+            }
+
+            try {
+                const response = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: 'csv', leads })
+                });
+
+                const data = await response.json();
+                results = data.results;
+                displayResults();
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                hideProgress();
+            }
+        }
+
+        function displayResults() {
+            const container = document.getElementById('results-list');
+            const count = document.getElementById('result-count');
+
+            count.textContent = results.length;
+            container.innerHTML = '';
+
+            results.forEach(result => {
+                const div = document.createElement('div');
+                div.className = 'result-item';
+
+                const socialLinks = [];
+                if (result.socialMedia.facebook) socialLinks.push(`<a href="${result.socialMedia.facebook}" class="social-link facebook" target="_blank">Facebook</a>`);
+                if (result.socialMedia.linkedin) socialLinks.push(`<a href="${result.socialMedia.linkedin}" class="social-link linkedin" target="_blank">LinkedIn</a>`);
+                if (result.socialMedia.instagram) socialLinks.push(`<a href="${result.socialMedia.instagram}" class="social-link instagram" target="_blank">Instagram</a>`);
+                if (result.socialMedia.twitter) socialLinks.push(`<a href="${result.socialMedia.twitter}" class="social-link twitter" target="_blank">Twitter</a>`);
+                if (result.socialMedia.youtube) socialLinks.push(`<a href="${result.socialMedia.youtube}" class="social-link youtube" target="_blank">YouTube</a>`);
+                if (result.socialMedia.tiktok) socialLinks.push(`<a href="${result.socialMedia.tiktok}" class="social-link tiktok" target="_blank">TikTok</a>`);
+
+                div.innerHTML = `
+                    <div class="result-name">${result.firstName} ${result.lastName} <span style="font-size:14px;color:#999">${result.yearsExperience}</span></div>
+                    <div class="result-stats">
+                        <div><strong>Email:</strong> ${result.email || 'N/A'}</div>
+                        <div><strong>Phone:</strong> ${result.phone || 'N/A'}</div>
+                        <div><strong>Total Sales:</strong> ${result.totalSales}</div>
+                        <div><strong>Last 12mo:</strong> ${result.sales12Months || 0}</div>
+                    </div>
+                    ${socialLinks.length ? `<div class="social-links">${socialLinks.join('')}</div>` : ''}
+                `;
+                container.appendChild(div);
+            });
+
+            document.getElementById('results').classList.remove('hidden');
+        }
+
+        async function downloadCSV() {
+            const response = await fetch('/api/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ results })
+            });
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `realtor-leads-${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+        }
+
+        function showProgress(text) {
+            document.getElementById('progress-text').textContent = text;
+            document.getElementById('progress').classList.remove('hidden');
+        }
+
+        function hideProgress() {
+            document.getElementById('progress').classList.add('hidden');
+        }
+
+        function hideResults() {
+            document.getElementById('results').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
