@@ -7,11 +7,12 @@ import time
 import re
 from datetime import datetime
 from bs4 import BeautifulSoup
+from curl_cffi import requests as curl_requests
 
 app = Flask(__name__)
 
-# Create a session to maintain cookies
-zillow_session = requests.Session()
+# Use curl-cffi for Zillow (impersonates real browser TLS)
+zillow_session = curl_requests.Session()
 
 GRAPHQL_URL = "https://www.realtor.com/frontdoor/graphql"
 HEADERS = {
@@ -336,9 +337,9 @@ def stream_agents_in_location(slug_id):
 def init_zillow_session():
     """Initialize Zillow session by visiting homepage to get cookies"""
     try:
-        # Visit Zillow homepage first to get cookies
-        zillow_session.get('https://www.zillow.com/', timeout=10)
-        print("Zillow session initialized with cookies")
+        # Visit Zillow homepage first to get cookies - impersonate Chrome
+        zillow_session.get('https://www.zillow.com/', impersonate="chrome120", timeout=10)
+        print("Zillow session initialized with cookies (TLS impersonation)")
     except Exception as e:
         print(f"Failed to init Zillow session: {e}")
 
@@ -367,7 +368,8 @@ def enrich_with_zillow(first_name, last_name, city_state):
             'upgrade-insecure-requests': '1'
         }
 
-        response = zillow_session.get(search_url, headers=zillow_headers, timeout=10)
+        # Use curl-cffi to impersonate real Chrome browser (TLS fingerprint)
+        response = zillow_session.get(search_url, headers=zillow_headers, impersonate="chrome120", timeout=10)
 
         if response.status_code != 200:
             print(f"Zillow returned status {response.status_code}")
