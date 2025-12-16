@@ -282,9 +282,9 @@ def stream_agents_in_location(slug_id):
                 first_name = name_parts[0] if name_parts else ''
                 last_name = ' '.join(name_parts[1:]) if len(name_parts) > 1 else ''
 
-                # Build profile URL from fulfillment_id
-                fulfillment_id = agent.get('fulfillment_id', '')
-                profile_url = f"https://www.realtor.com/realestateagents/{fulfillment_id}" if fulfillment_id else ''
+                # Build profile URL from agent ID (not fulfillment_id!)
+                agent_id = agent.get('id', '')
+                profile_url = f"https://www.realtor.com/realestateagents/{agent_id}" if agent_id else ''
 
                 # Get sales stats
                 stats = agent.get('listing_stats', {})
@@ -299,7 +299,7 @@ def stream_agents_in_location(slug_id):
                     'firstName': first_name,
                     'lastName': last_name,
                     'profileUrl': profile_url,
-                    'fulfillment_id': fulfillment_id,
+                    'agentId': agent_id,
                     'sales12Months': sales_12mo,
                     'totalSales': for_sale_count,
                     'recentSales': recent_sales_data[:5],
