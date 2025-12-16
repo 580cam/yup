@@ -334,7 +334,24 @@ def enrich_with_zillow(first_name, last_name, city_state):
 
         print(f"Searching Zillow for {first_name} {last_name}: {search_url}")
 
-        response = requests.get(search_url, headers=HEADERS, timeout=10)
+        # Zillow-specific headers to avoid 403
+        zillow_headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Referer': 'https://www.zillow.com/',
+            'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="143"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
+            'upgrade-insecure-requests': '1',
+            'cache-control': 'max-age=0'
+        }
+
+        response = requests.get(search_url, headers=zillow_headers, timeout=10)
 
         if response.status_code != 200:
             print(f"Zillow returned status {response.status_code}")
