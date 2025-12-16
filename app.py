@@ -4,7 +4,9 @@ import json
 import csv
 import io
 import time
+import re
 from datetime import datetime
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
@@ -324,10 +326,65 @@ def stream_agents_in_location(slug_id):
         import traceback
         traceback.print_exc()
 
-def enrich_realtor(lead):
-    """Enrich realtor data - simplified for streaming"""
+def enrich_with_zillow(first_name, last_name, city_state):
+    """Search Zillow for agent and extract email, phone, total sales"""
+    try:
+        # Search Zillow
+        search_url = f"https://www.zillow.com/professionals/real-estate-agent-reviews/{city_state.lower().replace(' ', '-')}/?name={first_name}+{last_name}"
 
-    # Calculate average home value from stats
+        print(f"Searching Zillow: {search_url}")
+
+        response = requests.get(search_url, headers=HEADERS, timeout=10)
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Find __NEXT_DATA__ script tag with JSON
+        script_tag = soup.find('script', {'id': '__NEXT_DATA__'})
+        if not script_tag:
+            return None
+
+        data = json.loads(script_tag.string)
+
+        # Navigate to profile data
+        props = data.get('props', {}).get('pageProps', {}).get('displayData', {})
+        results = props.get('agentFinderGraphData', {}).get('agentDirectoryFinderDisplay', {}).get('searchResults', {}).get('results', {}).get('resultsCards', [])
+
+        # Find matching agent
+        for card in results:
+            if card.get('__typename') == 'AgentDirectoryFinderProfileResultsCard':
+                card_name = card.get('cardTitle', '').lower()
+                if first_name.lower() in card_name and last_name.lower() in card_name:
+                    # Extract profile data
+                    profile_data = card.get('profileData', [])
+                    zillow_url = card.get('cardActionLink', '')
+
+                    # Parse sales data
+                    total_sales_in_city = 0
+                    sales_last_12mo = 0
+
+                    for item in profile_data:
+                        label = item.get('label', '').lower()
+                        data_val = item.get('data')
+
+                        if 'sales in' in label and data_val:
+                            total_sales_in_city = int(data_val)
+                        elif 'sales last 12 months' in label and data_val:
+                            sales_last_12mo = int(data_val)
+
+                    return {
+                        'zillowUrl': zillow_url,
+                        'totalSalesInCity': total_sales_in_city,
+                        'sales12Months': sales_last_12mo
+                    }
+
+        return None
+    except Exception as e:
+        print(f"Error enriching with Zillow: {e}")
+        return None
+
+def enrich_realtor(lead):
+    """Enrich realtor data with Zillow info"""
+
+    # Calculate average home value from realtor.com stats
     stats = lead.get('stats', {})
     combined = stats.get('combined_annual', {})
     avg_value = 'N/A'
@@ -335,27 +392,33 @@ def enrich_realtor(lead):
         avg = (combined['min'] + combined['max']) / 2
         avg_value = f"${int(avg):,}"
 
-    # Clean strings - remove any characters that might break JSON
+    # Clean strings
     def clean_str(s):
         if not s:
             return ''
-        # Replace problematic characters
         return str(s).replace('"', "'").replace('\n', ' ').replace('\r', ' ').strip()
 
+    first_name = clean_str(lead.get('firstName', ''))
+    last_name = clean_str(lead.get('lastName', ''))
+
+    # Enrich with Zillow data
+    zillow_data = enrich_with_zillow(first_name, last_name, 'oklahoma-city-ok')
+
     result = {
-        'firstName': clean_str(lead.get('firstName', '')),
-        'lastName': clean_str(lead.get('lastName', '')),
-        'email': clean_str(lead.get('email', '')),
-        'phone': clean_str(lead.get('phone', '')),
+        'firstName': first_name,
+        'lastName': last_name,
+        'email': '',  # Will add profile scraping next
+        'phone': '',
         'yearsExperience': 'Unknown',
-        'totalSales': int(lead.get('totalSales', 0)),
-        'sales12Months': int(lead.get('sales12Months', 0)),
-        'recentSales': [],  # Skip for now to avoid JSON issues
+        'totalSales': zillow_data.get('totalSalesInCity', 0) if zillow_data else int(lead.get('totalSales', 0)),
+        'sales12Months': zillow_data.get('sales12Months', 0) if zillow_data else int(lead.get('sales12Months', 0)),
+        'recentSales': [],
         'areasWorked': [],
         'avgHomeValue': avg_value,
         'specializations': [],
         'awards': [],
         'profileUrl': clean_str(lead.get('profileUrl', '')),
+        'zillowUrl': zillow_data.get('zillowUrl', '') if zillow_data else '',
         'socialMedia': {}
     }
 
