@@ -48,46 +48,60 @@ def find_realtors_in_area(area):
     realtors = []
 
     try:
-        # Search realtor.com
-        url = f"https://www.realtor.com/realestateagents/{area.replace(' ', '-')}"
+        # Try realtor.com
+        url = f"https://www.realtor.com/realestateagents/{area.replace(' ', '-').replace(',', '')}"
+        print(f"Fetching: {url}")
+
         response = requests.get(url, headers=HEADERS, timeout=15)
+        print(f"Response status: {response.status_code}")
         soup = BeautifulSoup(response.content, 'html.parser')
 
-        # Find agent cards
-        agent_cards = soup.find_all(['div', 'article'], class_=lambda x: x and ('agent' in x.lower() or 'card' in x.lower()))
+        # Look for any links with agent names (broader search)
+        all_links = soup.find_all('a', href=True)
 
-        for card in agent_cards[:20]:  # Limit to 20 per area
-            try:
+        seen_names = set()
+        for link in all_links:
+            href = link.get('href', '')
+            text = link.get_text(strip=True)
+
+            # Look for profile links
+            if '/realestateagents/' in href and text and len(text.split()) >= 2:
                 # Extract name
-                name_elem = card.find(['a', 'h2', 'h3', 'span'], string=lambda x: x and len(x.split()) >= 2)
-                if name_elem:
-                    full_name = name_elem.get_text(strip=True)
-                    name_parts = full_name.split()
-                    firstName = name_parts[0]
-                    lastName = ' '.join(name_parts[1:])
+                full_name = text.strip()
 
-                    # Extract profile URL
-                    profile_link = card.find('a', href=lambda x: x and '/realestateagents/' in x)
-                    profile_url = profile_link['href'] if profile_link else ''
-                    if profile_url and not profile_url.startswith('http'):
-                        profile_url = 'https://www.realtor.com' + profile_url
+                # Skip if not a name
+                if len(full_name) > 50 or full_name in seen_names:
+                    continue
 
-                    # Extract phone
-                    phone_elem = card.find(['a', 'span'], href=lambda x: x and x.startswith('tel:'))
-                    phone = phone_elem.get_text(strip=True) if phone_elem else ''
+                name_parts = full_name.split()
+                if len(name_parts) < 2:
+                    continue
 
-                    realtors.append({
-                        'firstName': firstName,
-                        'lastName': lastName,
-                        'profileUrl': profile_url,
-                        'phone': phone,
-                        'source': 'realtor.com'
-                    })
-            except:
-                continue
+                firstName = name_parts[0]
+                lastName = ' '.join(name_parts[1:])
+
+                # Build full URL
+                profile_url = href if href.startswith('http') else f"https://www.realtor.com{href}"
+
+                seen_names.add(full_name)
+
+                realtors.append({
+                    'firstName': firstName,
+                    'lastName': lastName,
+                    'profileUrl': profile_url,
+                    'phone': '',
+                    'source': 'realtor.com'
+                })
+
+                if len(realtors) >= 20:
+                    break
+
+        print(f"Found {len(realtors)} realtors")
 
     except Exception as e:
         print(f"Error scraping area {area}: {e}")
+        import traceback
+        traceback.print_exc()
 
     return realtors
 
