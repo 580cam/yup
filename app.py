@@ -332,14 +332,20 @@ def enrich_with_zillow(first_name, last_name, city_state):
         # Search Zillow
         search_url = f"https://www.zillow.com/professionals/real-estate-agent-reviews/{city_state.lower().replace(' ', '-')}/?name={first_name}+{last_name}"
 
-        print(f"Searching Zillow: {search_url}")
+        print(f"Searching Zillow for {first_name} {last_name}: {search_url}")
 
         response = requests.get(search_url, headers=HEADERS, timeout=10)
+
+        if response.status_code != 200:
+            print(f"Zillow returned status {response.status_code}")
+            return None
+
         soup = BeautifulSoup(response.content, 'html.parser')
 
         # Find __NEXT_DATA__ script tag with JSON
         script_tag = soup.find('script', {'id': '__NEXT_DATA__'})
         if not script_tag:
+            print("No __NEXT_DATA__ script found")
             return None
 
         data = json.loads(script_tag.string)
@@ -347,6 +353,8 @@ def enrich_with_zillow(first_name, last_name, city_state):
         # Navigate to profile data
         props = data.get('props', {}).get('pageProps', {}).get('displayData', {})
         results = props.get('agentFinderGraphData', {}).get('agentDirectoryFinderDisplay', {}).get('searchResults', {}).get('results', {}).get('resultsCards', [])
+
+        print(f"Found {len(results)} Zillow results for {first_name} {last_name}")
 
         # Find matching agent
         for card in results:
@@ -356,6 +364,8 @@ def enrich_with_zillow(first_name, last_name, city_state):
                     # Extract profile data
                     profile_data = card.get('profileData', [])
                     zillow_url = card.get('cardActionLink', '')
+
+                    print(f"MATCH FOUND: {card_name} -> {zillow_url}")
 
                     # Parse sales data
                     total_sales_in_city = 0
@@ -367,8 +377,10 @@ def enrich_with_zillow(first_name, last_name, city_state):
 
                         if 'sales in' in label and data_val:
                             total_sales_in_city = int(data_val)
+                            print(f"  Total sales: {total_sales_in_city}")
                         elif 'sales last 12 months' in label and data_val:
                             sales_last_12mo = int(data_val)
+                            print(f"  12mo sales: {sales_last_12mo}")
 
                     return {
                         'zillowUrl': zillow_url,
@@ -376,9 +388,12 @@ def enrich_with_zillow(first_name, last_name, city_state):
                         'sales12Months': sales_last_12mo
                     }
 
+        print(f"No Zillow match for {first_name} {last_name}")
         return None
     except Exception as e:
-        print(f"Error enriching with Zillow: {e}")
+        print(f"Error enriching with Zillow for {first_name} {last_name}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def enrich_realtor(lead):
