@@ -71,49 +71,58 @@ def find_realtors_in_area(area):
         print(f"Fetching: {url}")
 
         driver.get(url)
-        time.sleep(3)  # Wait for page load
+        time.sleep(5)  # Wait for page load
+
+        # Save page for debugging
+        with open('/tmp/page_source.html', 'w') as f:
+            f.write(driver.page_source)
+        print("Page source saved to /tmp/page_source.html")
 
         # Get page source after JS renders
         soup = BeautifulSoup(driver.page_source, 'html.parser')
 
-        # Look for agent profile links
+        # Look for ANY link with names - be very broad
         all_links = soup.find_all('a', href=True)
+        print(f"Total links found: {len(all_links)}")
+
+        profile_links = [l for l in all_links if '/realestateagents/' in l.get('href', '')]
+        print(f"Profile links found: {len(profile_links)}")
 
         seen_names = set()
         for link in all_links:
             href = link.get('href', '')
             text = link.get_text(strip=True)
 
-            # Look for profile links
-            if '/realestateagents/' in href and '/profile/' in href and text and len(text.split()) >= 2:
-                full_name = text.strip()
+            # Look for profile links - very broad search
+            if '/realestateagents/' in href and text:
+                print(f"Found link: {text[:50]} -> {href[:80]}")
 
-                # Skip if not a name
-                if len(full_name) > 50 or full_name in seen_names or not full_name[0].isupper():
-                    continue
+                # Try to extract name
+                if len(text.split()) >= 2 and len(text) < 100:
+                    full_name = text.strip()
 
-                name_parts = full_name.split()
-                if len(name_parts) < 2:
-                    continue
+                    if full_name in seen_names:
+                        continue
 
-                firstName = name_parts[0]
-                lastName = ' '.join(name_parts[1:])
+                    name_parts = full_name.split()
+                    firstName = name_parts[0]
+                    lastName = ' '.join(name_parts[1:])
 
-                # Build full URL
-                profile_url = href if href.startswith('http') else f"https://www.realtor.com{href}"
+                    # Build full URL
+                    profile_url = href if href.startswith('http') else f"https://www.realtor.com{href}"
 
-                seen_names.add(full_name)
+                    seen_names.add(full_name)
 
-                realtors.append({
-                    'firstName': firstName,
-                    'lastName': lastName,
-                    'profileUrl': profile_url,
-                    'phone': '',
-                    'source': 'realtor.com'
-                })
+                    realtors.append({
+                        'firstName': firstName,
+                        'lastName': lastName,
+                        'profileUrl': profile_url,
+                        'phone': '',
+                        'source': 'realtor.com'
+                    })
 
-                if len(realtors) >= 20:
-                    break
+                    if len(realtors) >= 20:
+                        break
 
         print(f"Found {len(realtors)} realtors")
 
