@@ -10,6 +10,9 @@ from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
+# Create a session to maintain cookies
+zillow_session = requests.Session()
+
 GRAPHQL_URL = "https://www.realtor.com/frontdoor/graphql"
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
@@ -123,6 +126,9 @@ def scrape():
 def stream_agents_from_area(area):
     """Generator that yields agents one at a time as they're fetched"""
     try:
+        # Initialize Zillow session to get cookies
+        init_zillow_session()
+
         # First, search for the location
         location_query = {
             "operationName": "AgentLocationSearch",
@@ -326,13 +332,22 @@ def stream_agents_in_location(slug_id):
         import traceback
         traceback.print_exc()
 
+def init_zillow_session():
+    """Initialize Zillow session by visiting homepage to get cookies"""
+    try:
+        # Visit Zillow homepage first to get cookies
+        zillow_session.get('https://www.zillow.com/', timeout=10)
+        print("Zillow session initialized with cookies")
+    except Exception as e:
+        print(f"Failed to init Zillow session: {e}")
+
 def enrich_with_zillow(first_name, last_name, city_state):
     """Search Zillow for agent and extract email, phone, total sales"""
     try:
         # Search Zillow
         search_url = f"https://www.zillow.com/professionals/real-estate-agent-reviews/{city_state.lower().replace(' ', '-')}/?name={first_name}+{last_name}"
 
-        print(f"Searching Zillow for {first_name} {last_name}: {search_url}")
+        print(f"Searching Zillow for {first_name} {last_name}")
 
         # Zillow-specific headers to avoid 403
         zillow_headers = {
@@ -340,18 +355,18 @@ def enrich_with_zillow(first_name, last_name, city_state):
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Referer': 'https://www.zillow.com/',
+            'Referer': f'https://www.zillow.com/professionals/real-estate-agent-reviews/{city_state.lower().replace(" ", "-")}/',
             'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="143"',
             'sec-ch-ua-mobile': '?0',
             'sec-ch-ua-platform': '"Windows"',
             'sec-fetch-dest': 'document',
             'sec-fetch-mode': 'navigate',
             'sec-fetch-site': 'same-origin',
-            'upgrade-insecure-requests': '1',
-            'cache-control': 'max-age=0'
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1'
         }
 
-        response = requests.get(search_url, headers=zillow_headers, timeout=10)
+        response = zillow_session.get(search_url, headers=zillow_headers, timeout=10)
 
         if response.status_code != 200:
             print(f"Zillow returned status {response.status_code}")
