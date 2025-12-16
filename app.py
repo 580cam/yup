@@ -53,7 +53,7 @@ def scrape():
             areas = data.get('areas', [])
             for area in areas:
                 batch = []
-                # Stream agents in batches of 50
+                # Stream agents in batches of 10 (smaller batches = more reliable)
                 for agent in stream_agents_from_area(area):
                     if agent is None:
                         # Keepalive
@@ -64,11 +64,22 @@ def scrape():
                         enriched = enrich_realtor(agent)
                         batch.append(enriched)
 
-                        # Send batch when we have 50
-                        if len(batch) >= 50:
-                            json_str = json.dumps({'batch': batch}, ensure_ascii=True, separators=(',', ':'))
-                            yield f"data: {json_str}\n\n"
-                            batch = []
+                        # Send batch when we have 10
+                        if len(batch) >= 10:
+                            try:
+                                json_str = json.dumps({'batch': batch}, ensure_ascii=True, separators=(',', ':'))
+                                yield f"data: {json_str}\n\n"
+                                batch = []
+                            except Exception as je:
+                                print(f"JSON encoding error, sending one by one: {je}")
+                                # Fallback: send individually
+                                for item in batch:
+                                    try:
+                                        single_json = json.dumps(item, ensure_ascii=True, separators=(',', ':'))
+                                        yield f"data: {single_json}\n\n"
+                                    except:
+                                        pass
+                                batch = []
 
                     except Exception as e:
                         print(f"Error encoding agent: {e}")
@@ -76,8 +87,16 @@ def scrape():
 
                 # Send remaining batch
                 if batch:
-                    json_str = json.dumps({'batch': batch}, ensure_ascii=True, separators=(',', ':'))
-                    yield f"data: {json_str}\n\n"
+                    try:
+                        json_str = json.dumps({'batch': batch}, ensure_ascii=True, separators=(',', ':'))
+                        yield f"data: {json_str}\n\n"
+                    except:
+                        for item in batch:
+                            try:
+                                single_json = json.dumps(item, ensure_ascii=True, separators=(',', ':'))
+                                yield f"data: {single_json}\n\n"
+                            except:
+                                pass
 
         elif mode == 'csv':
             leads = data.get('leads', [])

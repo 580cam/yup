@@ -365,19 +365,31 @@
             const count = document.getElementById('result-count');
 
             count.textContent = results.length;
+
+            // Only show last 100 agents to keep UI fast
+            const displayLimit = 100;
+            const toDisplay = results.slice(-displayLimit);
+
             container.innerHTML = '';
 
-            results.forEach(result => {
+            if (results.length > displayLimit) {
+                const notice = document.createElement('div');
+                notice.style.cssText = 'padding:15px;background:#fff3cd;border-radius:8px;margin-bottom:15px;text-align:center;';
+                notice.innerHTML = `Showing most recent ${displayLimit} of ${results.length} total agents. Download CSV to get all.`;
+                container.appendChild(notice);
+            }
+
+            toDisplay.forEach(result => {
                 const div = document.createElement('div');
                 div.className = 'result-item';
 
                 const socialLinks = [];
-                if (result.socialMedia.facebook) socialLinks.push(`<a href="${result.socialMedia.facebook}" class="social-link facebook" target="_blank">Facebook</a>`);
-                if (result.socialMedia.linkedin) socialLinks.push(`<a href="${result.socialMedia.linkedin}" class="social-link linkedin" target="_blank">LinkedIn</a>`);
-                if (result.socialMedia.instagram) socialLinks.push(`<a href="${result.socialMedia.instagram}" class="social-link instagram" target="_blank">Instagram</a>`);
-                if (result.socialMedia.twitter) socialLinks.push(`<a href="${result.socialMedia.twitter}" class="social-link twitter" target="_blank">Twitter</a>`);
-                if (result.socialMedia.youtube) socialLinks.push(`<a href="${result.socialMedia.youtube}" class="social-link youtube" target="_blank">YouTube</a>`);
-                if (result.socialMedia.tiktok) socialLinks.push(`<a href="${result.socialMedia.tiktok}" class="social-link tiktok" target="_blank">TikTok</a>`);
+                if (result.socialMedia?.facebook) socialLinks.push(`<a href="${result.socialMedia.facebook}" class="social-link facebook" target="_blank">Facebook</a>`);
+                if (result.socialMedia?.linkedin) socialLinks.push(`<a href="${result.socialMedia.linkedin}" class="social-link linkedin" target="_blank">LinkedIn</a>`);
+                if (result.socialMedia?.instagram) socialLinks.push(`<a href="${result.socialMedia.instagram}" class="social-link instagram" target="_blank">Instagram</a>`);
+                if (result.socialMedia?.twitter) socialLinks.push(`<a href="${result.socialMedia.twitter}" class="social-link twitter" target="_blank">Twitter</a>`);
+                if (result.socialMedia?.youtube) socialLinks.push(`<a href="${result.socialMedia.youtube}" class="social-link youtube" target="_blank">YouTube</a>`);
+                if (result.socialMedia?.tiktok) socialLinks.push(`<a href="${result.socialMedia.tiktok}" class="social-link tiktok" target="_blank">TikTok</a>`);
 
                 div.innerHTML = `
                     <div class="result-name">${result.firstName} ${result.lastName} <span style="font-size:14px;color:#999">${result.yearsExperience}</span></div>
