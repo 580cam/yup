@@ -14,6 +14,10 @@ app = Flask(__name__)
 # Use curl-cffi for Zillow (impersonates real browser TLS)
 zillow_session = curl_requests.Session()
 
+# Proxy pool
+proxy_list = []
+proxy_index = 0
+
 GRAPHQL_URL = "https://www.realtor.com/frontdoor/graphql"
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
@@ -334,12 +338,48 @@ def stream_agents_in_location(slug_id):
         import traceback
         traceback.print_exc()
 
+def load_free_proxies():
+    """Load free proxies from multiple sources"""
+    global proxy_list
+    proxies = []
+
+    try:
+        # Source 1: ProxyScrape
+        r = requests.get('https://api.proxyscrape.com/v2/?request=get&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all', timeout=10)
+        proxies.extend(r.text.strip().split('\r\n'))
+
+        # Source 2: Free Proxy List
+        r = requests.get('https://www.proxy-list.download/api/v1/get?type=http', timeout=10)
+        proxies.extend(r.text.strip().split('\r\n'))
+
+        # Clean and dedupe
+        proxy_list = list(set([p.strip() for p in proxies if p.strip()]))[:100]  # Keep 100 proxies
+        print(f"Loaded {len(proxy_list)} free proxies")
+    except Exception as e:
+        print(f"Error loading proxies: {e}")
+        proxy_list = []
+
+def get_next_proxy():
+    """Get next proxy from pool (rotate)"""
+    global proxy_index
+    if not proxy_list:
+        return None
+
+    proxy_index = (proxy_index + 1) % len(proxy_list)
+    proxy = proxy_list[proxy_index]
+    return {'http': f'http://{proxy}', 'https': f'http://{proxy}'}
+
 def init_zillow_session():
     """Initialize Zillow session by visiting homepage to get cookies"""
     try:
+        # Load proxies on first run
+        if not proxy_list:
+            load_free_proxies()
+
         # Visit Zillow homepage first to get cookies - impersonate Chrome
-        zillow_session.get('https://www.zillow.com/', impersonate="chrome120", timeout=10)
-        print("Zillow session initialized with cookies (TLS impersonation)")
+        proxy = get_next_proxy()
+        zillow_session.get('https://www.zillow.com/', impersonate="chrome120", proxies=proxy, timeout=15)
+        print(f"Zillow session initialized (TLS impersonation, proxy: {bool(proxy)})")
     except Exception as e:
         print(f"Failed to init Zillow session: {e}")
 
@@ -375,12 +415,17 @@ def enrich_with_zillow(first_name, last_name, city_state):
             'upgrade-insecure-requests': '1'
         }
 
+        # Rotate proxy for each request
+        proxy = get_next_proxy()
+
         # Use curl-cffi to impersonate real Chrome browser (TLS fingerprint)
-        response = zillow_session.get(search_url, headers=zillow_headers, impersonate="chrome120", timeout=10)
+        response = zillow_session.get(search_url, headers=zillow_headers, impersonate="chrome120", proxies=proxy, timeout=15)
 
         if response.status_code != 200:
-            print(f"Zillow returned status {response.status_code}")
+            print(f"Zillow returned status {response.status_code} (proxy: {proxy})")
             return None
+
+        print(f"Zillow success! Status 200")
 
         soup = BeautifulSoup(response.content, 'html.parser')
 
