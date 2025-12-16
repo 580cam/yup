@@ -55,17 +55,20 @@ def scrape():
                 # Stream agents as they're found
                 for agent in stream_agents_from_area(area):
                     enriched = enrich_realtor(agent)
-                    yield f"data: {json.dumps(enriched)}\n\n"
+                    # Ensure proper JSON encoding
+                    json_str = json.dumps(enriched, ensure_ascii=False)
+                    yield f"data: {json_str}\n\n"
 
         elif mode == 'csv':
             leads = data.get('leads', [])
             for lead in leads:
                 if lead.get('firstName') and lead.get('lastName'):
                     enriched = enrich_realtor(lead)
-                    yield f"data: {json.dumps(enriched)}\n\n"
+                    json_str = json.dumps(enriched, ensure_ascii=False)
+                    yield f"data: {json_str}\n\n"
                     time.sleep(0.5)
 
-        yield "data: {\"done\": true}\n\n"
+        yield 'data: {"done": true}\n\n'
 
     return app.response_class(generate(), mimetype='text/event-stream', headers={
         'Cache-Control': 'no-cache',
