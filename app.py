@@ -133,31 +133,75 @@ def search_agents_in_location(slug_id):
     agents = []
 
     try:
-        # Query for agents - this might need adjustment based on their actual schema
+        # Convert slug_id format: "Oklahoma-City_OK" -> "ok_oklahoma-city"
+        parts = slug_id.split('_')
+        if len(parts) == 2:
+            city_part = parts[0].lower()
+            state_part = parts[1].lower()
+            marketing_area = f"{state_part}_{city_part}"
+        else:
+            marketing_area = slug_id.lower()
+
+        print(f"Using marketing_area_city: {marketing_area}")
+
+        # Use the correct SearchAgents query
         agents_query = {
-            "operationName": "AgentSearch",
+            "operationName": "SearchAgents",
             "variables": {
-                "slug_id": slug_id,
-                "limit": 50,
-                "offset": 0
+                "searchAgentInput": {
+                    "name": "",
+                    "postal_code": "",
+                    "languages": [],
+                    "agent_type": None,
+                    "marketing_area_city": marketing_area,
+                    "sort": "RELEVANT_AGENTS",
+                    "offset": 0,
+                    "agent_filter_criteria": "NRDS_AND_FULFILLMENT_ID_EXISTS",
+                    "limit": 50
+                }
             },
-            "query": """query AgentSearch($slug_id: String!, $limit: Int, $offset: Int) {
-                agent_search(query: {location: {slug_id: $slug_id}, limit: $limit, offset: $offset}) {
-                    results {
-                        advertiser_id
-                        person {
-                            name
-                            first_name
-                            last_name
-                            email
-                            phone
+            "query": """query SearchAgents($searchAgentInput: SearchAgentInput) {
+                search_agents(search_agent_input: $searchAgentInput) {
+                    agents {
+                        id
+                        fulfillment_id
+                        fullname
+                        listing_stats {
+                            combined_annual {
+                                min
+                                max
+                                __typename
+                            }
+                            for_sale {
+                                count
+                                last_listing_date
+                                __typename
+                            }
+                            recently_sold_annual {
+                                count
+                                __typename
+                            }
+                            recently_sold_listing_details {
+                                listings {
+                                    baths
+                                    beds
+                                    city
+                                    state_code
+                                    __typename
+                                }
+                                __typename
+                            }
+                            __typename
                         }
-                        broker {
-                            name
+                        ratings_reviews {
+                            average_rating
+                            recommendations_count
+                            reviews_count
+                            __typename
                         }
-                        web_url
                         __typename
                     }
+                    matching_rows
                     __typename
                 }
             }"""
@@ -166,10 +210,42 @@ def search_agents_in_location(slug_id):
         response = requests.post(GRAPHQL_URL, json=agents_query, headers=HEADERS, timeout=15)
         data = response.json()
 
-        print(f"Agent search response: {data}")
+        print(f"Agent search status: {response.status_code}")
 
-        # Parse results - exact structure TBD
-        # For now, return empty and we'll adjust based on actual response
+        if 'data' in data and 'search_agents' in data['data']:
+            agent_list = data['data']['search_agents']['agents']
+            print(f"Found {len(agent_list)} agents via GraphQL!")
+
+            for agent in agent_list:
+                # Parse agent data
+                full_name = agent.get('fullname', '')
+                name_parts = full_name.split()
+
+                first_name = name_parts[0] if name_parts else ''
+                last_name = ' '.join(name_parts[1:]) if len(name_parts) > 1 else ''
+
+                # Build profile URL from fulfillment_id
+                fulfillment_id = agent.get('fulfillment_id', '')
+                profile_url = f"https://www.realtor.com/realestateagents/{fulfillment_id}" if fulfillment_id else ''
+
+                # Get sales stats
+                stats = agent.get('listing_stats', {})
+                sales_12mo = stats.get('recently_sold_annual', {}).get('count') or 0
+                for_sale_count = stats.get('for_sale', {}).get('count') or 0
+
+                # Get recent sales
+                recent_sales_data = stats.get('recently_sold_listing_details', {}).get('listings', [])
+
+                agents.append({
+                    'firstName': first_name,
+                    'lastName': last_name,
+                    'profileUrl': profile_url,
+                    'fulfillment_id': fulfillment_id,
+                    'sales12Months': sales_12mo,
+                    'totalSales': for_sale_count,
+                    'recentSales': recent_sales_data[:5],
+                    'stats': stats
+                })
 
     except Exception as e:
         print(f"Error searching agents: {e}")
@@ -180,17 +256,36 @@ def search_agents_in_location(slug_id):
 
 def enrich_realtor(lead):
     """Enrich realtor data"""
+
+    # Format recent sales from API data
+    recent_sales = []
+    raw_sales = lead.get('recentSales', [])
+    for sale in raw_sales[:5]:
+        recent_sales.append({
+            'address': f"{sale.get('city', '')}, {sale.get('state_code', '')}",
+            'date': 'Recently sold',
+            'price': f"{sale.get('beds', 'N/A')} bed, {sale.get('baths', 'N/A')} bath"
+        })
+
+    # Calculate average home value from stats
+    stats = lead.get('stats', {})
+    combined = stats.get('combined_annual', {})
+    avg_value = 'N/A'
+    if combined.get('min') and combined.get('max'):
+        avg = (combined['min'] + combined['max']) / 2
+        avg_value = f"${int(avg):,}"
+
     result = {
         'firstName': lead.get('firstName', ''),
         'lastName': lead.get('lastName', ''),
         'email': lead.get('email', ''),
         'phone': lead.get('phone', ''),
         'yearsExperience': 'Unknown',
-        'totalSales': 0,
-        'sales12Months': 0,
-        'recentSales': [],
+        'totalSales': lead.get('totalSales', 0),
+        'sales12Months': lead.get('sales12Months', 0),
+        'recentSales': recent_sales,
         'areasWorked': [],
-        'avgHomeValue': 'N/A',
+        'avgHomeValue': avg_value,
         'specializations': [],
         'awards': [],
         'profileUrl': lead.get('profileUrl', ''),
@@ -203,9 +298,6 @@ def enrich_realtor(lead):
             'tiktok': ''
         }
     }
-
-    # If we have a profile URL, fetch more details
-    # For now, return basic info
 
     return result
 
