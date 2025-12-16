@@ -1,16 +1,18 @@
 from flask import Flask, render_template, request, jsonify, send_file
-from playwright.sync_api import sync_playwright
-from bs4 import BeautifulSoup
+import requests
 import csv
 import io
 import time
-import sys
 from datetime import datetime
 
 app = Flask(__name__)
 
-# Force stdout to flush immediately
-sys.stdout.reconfigure(line_buffering=True)
+GRAPHQL_URL = "https://www.realtor.com/frontdoor/graphql"
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+    'Content-Type': 'application/json',
+    'Accept': 'application/json'
+}
 
 @app.route('/')
 def index():
@@ -18,7 +20,7 @@ def index():
 
 @app.route('/api/test')
 def test():
-    return jsonify({'status': 'working', 'message': 'API is alive'})
+    return jsonify({'status': 'working', 'message': 'API is alive - GraphQL version'})
 
 @app.route('/api/scrape', methods=['POST'])
 def scrape():
@@ -37,12 +39,14 @@ def scrape():
     if mode == 'area':
         areas = data.get('areas', [])
         for area in areas:
-            # Scrape realtors from area
-            realtors = find_realtors_in_area(area)
-            for realtor in realtors:
-                enriched = enrich_realtor(realtor)
+            # Get agents from GraphQL API
+            agents = find_agents_graphql(area)
+            print(f"Found {len(agents)} agents in {area}")
+
+            for agent in agents:
+                enriched = enrich_realtor(agent)
                 results.append(enriched)
-                time.sleep(1)  # Rate limiting
+                time.sleep(0.5)  # Light rate limiting
 
     elif mode == 'csv':
         leads = data.get('leads', [])
@@ -50,103 +54,116 @@ def scrape():
             if lead.get('firstName') and lead.get('lastName'):
                 enriched = enrich_realtor(lead)
                 results.append(enriched)
-                time.sleep(1)  # Rate limiting
+                time.sleep(0.5)
 
     return jsonify({'results': results})
 
-def find_realtors_in_area(area):
-    """Find realtors in target area using Playwright"""
-    realtors = []
+def find_agents_graphql(area):
+    """Find agents using realtor.com GraphQL API"""
+    agents = []
 
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+        # First, search for the location
+        location_query = {
+            "operationName": "AgentLocationSearch",
+            "variables": {
+                "locationSearchInput": {
+                    "input": area,
+                    "client_id": "agent-branding-search",
+                    "limit": 10,
+                    "area_types": "city,postal_code"
+                }
+            },
+            "query": """query AgentLocationSearch($locationSearchInput: AgentLocationSearchInput) {
+                agents_location_search(location_search_input: $locationSearchInput) {
+                    auto_complete {
+                        id
+                        slug_id
+                        city
+                        state_code
+                        postal_code
+                        __typename
+                    }
+                    __typename
+                }
+            }"""
+        }
 
-            # Format: "oklahoma city ok" -> "oklahoma-city_ok"
-            area_clean = area.lower().strip()
-            parts = area_clean.split()
+        response = requests.post(GRAPHQL_URL, json=location_query, headers=HEADERS, timeout=15)
+        location_data = response.json()
 
-            # If last part looks like state code (2 chars), separate with underscore
-            if len(parts) >= 2 and len(parts[-1]) == 2:
-                state = parts[-1]
-                city = '-'.join(parts[:-1])
-                url_slug = f"{city}_{state}"
-            else:
-                # Just dash-separate everything
-                url_slug = '-'.join(parts)
+        if 'data' in location_data and 'agents_location_search' in location_data['data']:
+            locations = location_data['data']['agents_location_search']['auto_complete']
 
-            seen_names = set()
+            if locations:
+                # Use first location match
+                location = locations[0]
+                slug_id = location.get('slug_id')
 
-            # Scrape first 3 pages
-            for page_num in range(1, 4):
-                if page_num == 1:
-                    url = f"https://www.realtor.com/realestateagents/{url_slug}"
-                else:
-                    url = f"https://www.realtor.com/realestateagents/{url_slug}/pg-{page_num}"
+                print(f"Found location: {slug_id}")
 
-                print(f"Fetching page {page_num}: {url}")
-
-                page.goto(url, wait_until='networkidle', timeout=30000)
-                time.sleep(3)
-
-                html = page.content()
-                soup = BeautifulSoup(html, 'html.parser')
-
-                # Look for ANY link with names
-                all_links = soup.find_all('a', href=True)
-                print(f"Total links found: {len(all_links)}")
-
-                profile_links = [l for l in all_links if '/realestateagents/' in l.get('href', '')]
-                print(f"Profile links found: {len(profile_links)}")
-
-                for link in all_links:
-                    href = link.get('href', '')
-                    text = link.get_text(strip=True)
-
-                    # Look for profile links
-                    if '/realestateagents/' in href and text:
-                        if len(text.split()) >= 2 and len(text) < 100:
-                            full_name = text.strip()
-
-                            if full_name in seen_names:
-                                continue
-
-                            name_parts = full_name.split()
-                            firstName = name_parts[0]
-                            lastName = ' '.join(name_parts[1:])
-
-                            profile_url = href if href.startswith('http') else f"https://www.realtor.com{href}"
-
-                            seen_names.add(full_name)
-
-                            realtors.append({
-                                'firstName': firstName,
-                                'lastName': lastName,
-                                'profileUrl': profile_url,
-                                'phone': '',
-                                'source': 'realtor.com'
-                            })
-
-                            print(f"Added: {full_name}")
-
-                print(f"Page {page_num} complete. Total realtors so far: {len(realtors)}")
-
-                if len(realtors) >= 50:
-                    break
-
-            print(f"Found {len(realtors)} realtors total")
-            browser.close()
+                # Now search for agents in that location
+                agents = search_agents_in_location(slug_id)
 
     except Exception as e:
-        print(f"Error scraping area {area}: {e}")
+        print(f"Error finding agents via GraphQL: {e}")
         import traceback
         traceback.print_exc()
 
-    return realtors
+    return agents
+
+def search_agents_in_location(slug_id):
+    """Search for agents in a specific location"""
+    agents = []
+
+    try:
+        # Query for agents - this might need adjustment based on their actual schema
+        agents_query = {
+            "operationName": "AgentSearch",
+            "variables": {
+                "slug_id": slug_id,
+                "limit": 50,
+                "offset": 0
+            },
+            "query": """query AgentSearch($slug_id: String!, $limit: Int, $offset: Int) {
+                agent_search(query: {location: {slug_id: $slug_id}, limit: $limit, offset: $offset}) {
+                    results {
+                        advertiser_id
+                        person {
+                            name
+                            first_name
+                            last_name
+                            email
+                            phone
+                        }
+                        broker {
+                            name
+                        }
+                        web_url
+                        __typename
+                    }
+                    __typename
+                }
+            }"""
+        }
+
+        response = requests.post(GRAPHQL_URL, json=agents_query, headers=HEADERS, timeout=15)
+        data = response.json()
+
+        print(f"Agent search response: {data}")
+
+        # Parse results - exact structure TBD
+        # For now, return empty and we'll adjust based on actual response
+
+    except Exception as e:
+        print(f"Error searching agents: {e}")
+        import traceback
+        traceback.print_exc()
+
+    return agents
 
 def enrich_realtor(lead):
-    """Enrich realtor data from their profile page"""
+    """Enrich realtor data"""
     result = {
         'firstName': lead.get('firstName', ''),
         'lastName': lead.get('lastName', ''),
@@ -171,96 +188,10 @@ def enrich_realtor(lead):
         }
     }
 
-    profile_url = lead.get('profileUrl')
-    if not profile_url:
-        return result
-
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            page.goto(profile_url, wait_until='networkidle', timeout=30000)
-            time.sleep(2)
-
-            html = page.content()
-            soup = BeautifulSoup(html, 'html.parser')
-
-            # Extract experience
-            exp_text = soup.get_text()
-            if 'year' in exp_text.lower():
-                import re
-                match = re.search(r'(\d+)\s*(?:years?|yrs?)', exp_text, re.IGNORECASE)
-                if match:
-                    result['yearsExperience'] = f"{match.group(1)} years"
-
-            # Extract sales numbers
-            numbers = soup.find_all(string=lambda x: x and any(char.isdigit() for char in str(x)))
-            for text in numbers:
-                if 'transaction' in str(text).lower() or 'sale' in str(text).lower():
-                    import re
-                    match = re.search(r'(\d+)', str(text))
-                    if match and result['totalSales'] == 0:
-                        result['totalSales'] = int(match.group(1))
-
-                if '12' in str(text) and 'month' in str(text).lower():
-                    import re
-                    match = re.search(r'(\d+)', str(text))
-                    if match:
-                        result['sales12Months'] = int(match.group(1))
-
-            # Extract email
-            email_elem = soup.find('a', href=lambda x: x and x.startswith('mailto:'))
-            if email_elem:
-                result['email'] = email_elem['href'].replace('mailto:', '')
-
-            # Extract phone
-            if not result['phone']:
-                phone_elem = soup.find('a', href=lambda x: x and x.startswith('tel:'))
-                if phone_elem:
-                    result['phone'] = phone_elem.get_text(strip=True)
-
-            # Extract social media
-            social_links = soup.find_all('a', href=True)
-            for link in social_links:
-                href = link['href']
-                if 'facebook.com' in href:
-                    result['socialMedia']['facebook'] = href
-                elif 'linkedin.com' in href:
-                    result['socialMedia']['linkedin'] = href
-                elif 'instagram.com' in href:
-                    result['socialMedia']['instagram'] = href
-                elif 'twitter.com' in href or 'x.com' in href:
-                    result['socialMedia']['twitter'] = href
-                elif 'youtube.com' in href:
-                    result['socialMedia']['youtube'] = href
-                elif 'tiktok.com' in href:
-                    result['socialMedia']['tiktok'] = href
-
-            browser.close()
-
-    except Exception as e:
-        print(f"Error enriching {lead.get('firstName')} {lead.get('lastName')}: {e}")
+    # If we have a profile URL, fetch more details
+    # For now, return basic info
 
     return result
-
-def search_for_profile(search_name):
-    """Search for realtor profile"""
-    try:
-        url = f"https://www.realtor.com/realestateagents/{search_name.replace(' ', '-')}"
-        response = requests.get(url, headers=HEADERS, timeout=10)
-        soup = BeautifulSoup(response.content, 'html.parser')
-
-        # Find first profile link
-        profile_link = soup.find('a', href=lambda x: x and '/realestateagents/' in x and '/profile/' in x)
-        if profile_link:
-            url = profile_link['href']
-            if not url.startswith('http'):
-                url = 'https://www.realtor.com' + url
-            return url
-    except:
-        pass
-
-    return None
 
 @app.route('/api/export', methods=['POST'])
 def export_csv():
