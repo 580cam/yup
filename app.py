@@ -1,5 +1,8 @@
 from flask import Flask, render_template, request, jsonify, send_file
-import requests
+import undetected_chromedriver as uc
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 import csv
 import io
@@ -8,9 +11,15 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-}
+def get_driver():
+    """Create undetected Chrome driver"""
+    options = uc.ChromeOptions()
+    options.add_argument('--headless=new')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    driver = uc.Chrome(options=options, version_main=131)
+    return driver
 
 @app.route('/')
 def index():
@@ -44,19 +53,22 @@ def scrape():
     return jsonify({'results': results})
 
 def find_realtors_in_area(area):
-    """Find realtors in target area from realtor.com"""
+    """Find realtors in target area using undetected Chrome"""
     realtors = []
+    driver = None
 
     try:
-        # Try realtor.com
+        driver = get_driver()
         url = f"https://www.realtor.com/realestateagents/{area.replace(' ', '-').replace(',', '')}"
         print(f"Fetching: {url}")
 
-        response = requests.get(url, headers=HEADERS, timeout=15)
-        print(f"Response status: {response.status_code}")
-        soup = BeautifulSoup(response.content, 'html.parser')
+        driver.get(url)
+        time.sleep(3)  # Wait for page load
 
-        # Look for any links with agent names (broader search)
+        # Get page source after JS renders
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+
+        # Look for agent profile links
         all_links = soup.find_all('a', href=True)
 
         seen_names = set()
@@ -65,12 +77,11 @@ def find_realtors_in_area(area):
             text = link.get_text(strip=True)
 
             # Look for profile links
-            if '/realestateagents/' in href and text and len(text.split()) >= 2:
-                # Extract name
+            if '/realestateagents/' in href and '/profile/' in href and text and len(text.split()) >= 2:
                 full_name = text.strip()
 
                 # Skip if not a name
-                if len(full_name) > 50 or full_name in seen_names:
+                if len(full_name) > 50 or full_name in seen_names or not full_name[0].isupper():
                     continue
 
                 name_parts = full_name.split()
@@ -102,6 +113,9 @@ def find_realtors_in_area(area):
         print(f"Error scraping area {area}: {e}")
         import traceback
         traceback.print_exc()
+    finally:
+        if driver:
+            driver.quit()
 
     return realtors
 
@@ -133,16 +147,14 @@ def enrich_realtor(lead):
 
     profile_url = lead.get('profileUrl')
     if not profile_url:
-        # Try to find profile
-        search_name = f"{lead.get('firstName')} {lead.get('lastName')} realtor"
-        profile_url = search_for_profile(search_name)
-
-    if not profile_url:
         return result
 
+    driver = None
     try:
-        response = requests.get(profile_url, headers=HEADERS, timeout=15)
-        soup = BeautifulSoup(response.content, 'html.parser')
+        driver = get_driver()
+        driver.get(profile_url)
+        time.sleep(2)
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
 
         # Extract experience
         exp_text = soup.get_text()
@@ -197,6 +209,9 @@ def enrich_realtor(lead):
 
     except Exception as e:
         print(f"Error enriching {lead.get('firstName')} {lead.get('lastName')}: {e}")
+    finally:
+        if driver:
+            driver.quit()
 
     return result
 
