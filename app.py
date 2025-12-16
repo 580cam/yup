@@ -18,7 +18,15 @@ def get_driver():
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-blink-features=AutomationControlled')
-    driver = uc.Chrome(options=options, version_main=131)
+    options.add_argument('--disable-gpu')
+
+    try:
+        # Try system chromium first (for Railway/Docker)
+        driver = uc.Chrome(options=options, driver_executable_path='/usr/bin/chromedriver')
+    except:
+        # Fallback to auto-download
+        driver = uc.Chrome(options=options, version_main=131)
+
     return driver
 
 @app.route('/')
