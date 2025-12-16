@@ -1,2 +1,2 @@
 [start]
-cmd = "playwright install --with-deps chromium && gunicorn app:app"
+cmd = "chmod +x start.sh && ./start.sh"
