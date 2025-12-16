@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify, send_file
 import requests
+import json
 import csv
 import io
 import time
@@ -46,34 +47,33 @@ def scrape():
     mode = data.get('mode')
     print(f"Mode: {mode}")
 
-    results = []
+    def generate():
+        """Stream results as they're fetched"""
+        if mode == 'area':
+            areas = data.get('areas', [])
+            for area in areas:
+                # Stream agents as they're found
+                for agent in stream_agents_from_area(area):
+                    enriched = enrich_realtor(agent)
+                    yield f"data: {json.dumps(enriched)}\n\n"
 
-    if mode == 'area':
-        areas = data.get('areas', [])
-        for area in areas:
-            # Get agents from GraphQL API
-            agents = find_agents_graphql(area)
-            print(f"Found {len(agents)} agents in {area}")
+        elif mode == 'csv':
+            leads = data.get('leads', [])
+            for lead in leads:
+                if lead.get('firstName') and lead.get('lastName'):
+                    enriched = enrich_realtor(lead)
+                    yield f"data: {json.dumps(enriched)}\n\n"
+                    time.sleep(0.5)
 
-            for agent in agents:
-                enriched = enrich_realtor(agent)
-                results.append(enriched)
-                time.sleep(0.5)  # Light rate limiting
+        yield "data: {\"done\": true}\n\n"
 
-    elif mode == 'csv':
-        leads = data.get('leads', [])
-        for lead in leads:
-            if lead.get('firstName') and lead.get('lastName'):
-                enriched = enrich_realtor(lead)
-                results.append(enriched)
-                time.sleep(0.5)
+    return app.response_class(generate(), mimetype='text/event-stream', headers={
+        'Cache-Control': 'no-cache',
+        'X-Accel-Buffering': 'no'
+    })
 
-    return jsonify({'results': results})
-
-def find_agents_graphql(area):
-    """Find agents using realtor.com GraphQL API"""
-    agents = []
-
+def stream_agents_from_area(area):
+    """Generator that yields agents one at a time as they're fetched"""
     try:
         # First, search for the location
         location_query = {
@@ -104,7 +104,6 @@ def find_agents_graphql(area):
         response = requests.post(GRAPHQL_URL, json=location_query, headers=HEADERS, timeout=15)
 
         print(f"Location search status: {response.status_code}")
-        print(f"Response text: {response.text[:500]}")
 
         location_data = response.json()
 
@@ -112,26 +111,22 @@ def find_agents_graphql(area):
             locations = location_data['data']['agents_location_search']['auto_complete']
 
             if locations:
-                # Use first location match
                 location = locations[0]
                 slug_id = location.get('slug_id')
 
                 print(f"Found location: {slug_id}")
 
-                # Now search for agents in that location
-                agents = search_agents_in_location(slug_id)
+                # Stream agents from location
+                for agent in stream_agents_in_location(slug_id):
+                    yield agent
 
     except Exception as e:
         print(f"Error finding agents via GraphQL: {e}")
         import traceback
         traceback.print_exc()
 
-    return agents
-
-def search_agents_in_location(slug_id):
-    """Search for agents in a specific location - pagination through all pages"""
-    agents = []
-
+def stream_agents_in_location(slug_id):
+    """Generator that yields agents one at a time - pagination through all pages"""
     try:
         # Convert slug_id format: "Oklahoma-City_OK" -> "ok_oklahoma-city"
         parts = slug_id.split('_')
@@ -253,7 +248,8 @@ def search_agents_in_location(slug_id):
                 # Get recent sales
                 recent_sales_data = stats.get('recently_sold_listing_details', {}).get('listings', [])
 
-                agents.append({
+                # Yield agent immediately instead of appending to list
+                yield {
                     'firstName': first_name,
                     'lastName': last_name,
                     'profileUrl': profile_url,
@@ -262,7 +258,7 @@ def search_agents_in_location(slug_id):
                     'totalSales': for_sale_count,
                     'recentSales': recent_sales_data[:5],
                     'stats': stats
-                })
+                }
 
             # Move to next page
             offset += limit
@@ -272,17 +268,15 @@ def search_agents_in_location(slug_id):
                 print(f"Fetched all {total_rows} agents, stopping")
                 break
 
-            # Rate limiting between pages
-            time.sleep(1)
+            # No sleep - stream as fast as possible
+            # time.sleep(0.5)
 
-        print(f"Total agents collected: {len(agents)}")
+        print(f"Streaming complete")
 
     except Exception as e:
         print(f"Error searching agents: {e}")
         import traceback
         traceback.print_exc()
-
-    return agents
 
 def enrich_realtor(lead):
     """Enrich realtor data"""
