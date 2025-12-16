@@ -129,7 +129,7 @@ def find_agents_graphql(area):
     return agents
 
 def search_agents_in_location(slug_id):
-    """Search for agents in a specific location"""
+    """Search for agents in a specific location - pagination through all pages"""
     agents = []
 
     try:
@@ -144,77 +144,94 @@ def search_agents_in_location(slug_id):
 
         print(f"Using marketing_area_city: {marketing_area}")
 
-        # Use the correct SearchAgents query
-        agents_query = {
-            "operationName": "SearchAgents",
-            "variables": {
-                "searchAgentInput": {
-                    "name": "",
-                    "postal_code": "",
-                    "languages": [],
-                    "agent_type": None,
-                    "marketing_area_city": marketing_area,
-                    "sort": "RELEVANT_AGENTS",
-                    "offset": 0,
-                    "agent_filter_criteria": "NRDS_AND_FULFILLMENT_ID_EXISTS",
-                    "limit": 50
-                }
-            },
-            "query": """query SearchAgents($searchAgentInput: SearchAgentInput) {
-                search_agents(search_agent_input: $searchAgentInput) {
-                    agents {
-                        id
-                        fulfillment_id
-                        fullname
-                        listing_stats {
-                            combined_annual {
-                                min
-                                max
-                                __typename
-                            }
-                            for_sale {
-                                count
-                                last_listing_date
-                                __typename
-                            }
-                            recently_sold_annual {
-                                count
-                                __typename
-                            }
-                            recently_sold_listing_details {
-                                listings {
-                                    baths
-                                    beds
-                                    city
-                                    state_code
+        offset = 0
+        limit = 50
+        total_rows = None
+
+        # Paginate through all results
+        while True:
+            agents_query = {
+                "operationName": "SearchAgents",
+                "variables": {
+                    "searchAgentInput": {
+                        "name": "",
+                        "postal_code": "",
+                        "languages": [],
+                        "agent_type": None,
+                        "marketing_area_city": marketing_area,
+                        "sort": "RELEVANT_AGENTS",
+                        "offset": offset,
+                        "agent_filter_criteria": "NRDS_AND_FULFILLMENT_ID_EXISTS",
+                        "limit": limit
+                    }
+                },
+                "query": """query SearchAgents($searchAgentInput: SearchAgentInput) {
+                    search_agents(search_agent_input: $searchAgentInput) {
+                        agents {
+                            id
+                            fulfillment_id
+                            fullname
+                            listing_stats {
+                                combined_annual {
+                                    min
+                                    max
+                                    __typename
+                                }
+                                for_sale {
+                                    count
+                                    last_listing_date
+                                    __typename
+                                }
+                                recently_sold_annual {
+                                    count
+                                    __typename
+                                }
+                                recently_sold_listing_details {
+                                    listings {
+                                        baths
+                                        beds
+                                        city
+                                        state_code
+                                        __typename
+                                    }
                                     __typename
                                 }
                                 __typename
                             }
+                            ratings_reviews {
+                                average_rating
+                                recommendations_count
+                                reviews_count
+                                __typename
+                            }
                             __typename
                         }
-                        ratings_reviews {
-                            average_rating
-                            recommendations_count
-                            reviews_count
-                            __typename
-                        }
+                        matching_rows
                         __typename
                     }
-                    matching_rows
-                    __typename
-                }
-            }"""
-        }
+                }"""
+            }
 
-        response = requests.post(GRAPHQL_URL, json=agents_query, headers=HEADERS, timeout=15)
-        data = response.json()
+            response = requests.post(GRAPHQL_URL, json=agents_query, headers=HEADERS, timeout=15)
+            data = response.json()
 
-        print(f"Agent search status: {response.status_code}")
+            if 'data' not in data or 'search_agents' not in data['data']:
+                print("No data in response, stopping pagination")
+                break
 
-        if 'data' in data and 'search_agents' in data['data']:
-            agent_list = data['data']['search_agents']['agents']
-            print(f"Found {len(agent_list)} agents via GraphQL!")
+            search_data = data['data']['search_agents']
+            agent_list = search_data.get('agents', [])
+            matching_rows = search_data.get('matching_rows', 0)
+
+            if total_rows is None:
+                total_rows = matching_rows
+                print(f"Total agents available: {total_rows}")
+
+            print(f"Page offset {offset}: Got {len(agent_list)} agents")
+
+            if not agent_list:
+                print("No more agents, stopping pagination")
+                break
 
             for agent in agent_list:
                 # Parse agent data
@@ -246,6 +263,19 @@ def search_agents_in_location(slug_id):
                     'recentSales': recent_sales_data[:5],
                     'stats': stats
                 })
+
+            # Move to next page
+            offset += limit
+
+            # Stop if we've fetched all available agents
+            if offset >= total_rows:
+                print(f"Fetched all {total_rows} agents, stopping")
+                break
+
+            # Rate limiting between pages
+            time.sleep(1)
+
+        print(f"Total agents collected: {len(agents)}")
 
     except Exception as e:
         print(f"Error searching agents: {e}")
