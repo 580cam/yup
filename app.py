@@ -311,7 +311,8 @@ def stream_agents_in_location(slug_id):
                     'sales12Months': sales_12mo,
                     'totalSales': for_sale_count,
                     'recentSales': recent_sales_data[:5],
-                    'stats': stats
+                    'stats': stats,
+                    'cityState': slug_id  # Pass city/state for Zillow search
                 }
 
             # Move to next page
@@ -448,8 +449,13 @@ def enrich_realtor(lead):
     first_name = clean_str(lead.get('firstName', ''))
     last_name = clean_str(lead.get('lastName', ''))
 
+    # Get city/state from lead (format: "Oklahoma-City_OK")
+    city_state_slug = lead.get('cityState', 'oklahoma-city-ok')
+    # Convert to Zillow format: "Oklahoma-City_OK" -> "oklahoma-city-ok"
+    city_state = city_state_slug.lower().replace('_', '-')
+
     # Enrich with Zillow data
-    zillow_data = enrich_with_zillow(first_name, last_name, 'oklahoma-city-ok')
+    zillow_data = enrich_with_zillow(first_name, last_name, city_state)
 
     result = {
         'firstName': first_name,
