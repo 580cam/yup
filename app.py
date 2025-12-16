@@ -13,26 +13,16 @@ app = Flask(__name__)
 
 def get_driver():
     """Create undetected Chrome driver"""
-    try:
-        # Try system chromium first (for Railway/Docker)
-        options = uc.ChromeOptions()
-        options.add_argument('--headless=new')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--disable-blink-features=AutomationControlled')
-        options.add_argument('--disable-gpu')
-        driver = uc.Chrome(options=options, driver_executable_path='/usr/bin/chromedriver')
-        return driver
-    except:
-        # Fallback to auto-download with fresh options
-        options = uc.ChromeOptions()
-        options.add_argument('--headless=new')
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--disable-blink-features=AutomationControlled')
-        options.add_argument('--disable-gpu')
-        driver = uc.Chrome(options=options, version_main=131)
-        return driver
+    options = uc.ChromeOptions()
+    options.add_argument('--headless=new')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    options.add_argument('--disable-gpu')
+
+    # Let undetected_chromedriver find Chrome automatically
+    driver = uc.Chrome(options=options, use_subprocess=True)
+    return driver
 
 @app.route('/')
 def index():

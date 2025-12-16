@@ -1,8 +1,5 @@
 [phases.setup]
-aptPkgs = [
-    "chromium",
-    "chromium-driver"
-]
+nixPkgs = ["chromium"]
 
 [start]
 cmd = "gunicorn app:app"
