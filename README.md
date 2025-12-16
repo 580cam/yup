@@ -48,3 +48,4 @@ Open http://localhost:5000
 - 1 second delay between each scrape
 - Respectful to servers
 - For faster scraping, adjust `time.sleep(1)` in app.py
+# Redeploy Tue Dec 16 02:24:39 CST 2025
