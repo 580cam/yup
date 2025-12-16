@@ -54,21 +54,29 @@ def scrape():
             for area in areas:
                 # Stream agents as they're found
                 for agent in stream_agents_from_area(area):
-                    enriched = enrich_realtor(agent)
-                    # Ensure proper JSON encoding
-                    json_str = json.dumps(enriched, ensure_ascii=False)
-                    yield f"data: {json_str}\n\n"
+                    try:
+                        enriched = enrich_realtor(agent)
+                        # Ensure proper JSON encoding - compact, no newlines
+                        json_str = json.dumps(enriched, ensure_ascii=True, separators=(',', ':'))
+                        yield f"data: {json_str}\n\n"
+                    except Exception as e:
+                        print(f"Error encoding agent: {e}")
+                        continue
 
         elif mode == 'csv':
             leads = data.get('leads', [])
             for lead in leads:
                 if lead.get('firstName') and lead.get('lastName'):
-                    enriched = enrich_realtor(lead)
-                    json_str = json.dumps(enriched, ensure_ascii=False)
-                    yield f"data: {json_str}\n\n"
-                    time.sleep(0.5)
+                    try:
+                        enriched = enrich_realtor(lead)
+                        json_str = json.dumps(enriched, ensure_ascii=True, separators=(',', ':'))
+                        yield f"data: {json_str}\n\n"
+                        time.sleep(0.5)
+                    except Exception as e:
+                        print(f"Error encoding lead: {e}")
+                        continue
 
-        yield 'data: {"done": true}\n\n'
+        yield 'data: {"done":true}\n\n'
 
     return app.response_class(generate(), mimetype='text/event-stream', headers={
         'Cache-Control': 'no-cache',
