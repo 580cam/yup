@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["chromium"]
+nixPkgs = ["python312", "chromium"]
 
 [start]
 cmd = "gunicorn app:app"
