@@ -346,10 +346,17 @@ def init_zillow_session():
 def enrich_with_zillow(first_name, last_name, city_state):
     """Search Zillow for agent and extract email, phone, total sales"""
     try:
-        # Search Zillow
-        search_url = f"https://www.zillow.com/professionals/real-estate-agent-reviews/{city_state.lower().replace(' ', '-')}/?name={first_name}+{last_name}"
+        # Clean names - remove titles, commas, etc
+        first_clean = first_name.split(',')[0].strip()
+        last_clean = last_name.split(',')[0].strip()
 
-        print(f"Searching Zillow for {first_name} {last_name}")
+        # URL encode the names
+        from urllib.parse import quote_plus
+        name_query = quote_plus(f"{first_clean} {last_clean}")
+
+        search_url = f"https://www.zillow.com/professionals/real-estate-agent-reviews/{city_state.lower().replace(' ', '-')}/?name={name_query}"
+
+        print(f"Searching Zillow for {first_clean} {last_clean}")
 
         # Zillow-specific headers to avoid 403
         zillow_headers = {
