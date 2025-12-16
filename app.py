@@ -11,7 +11,16 @@ GRAPHQL_URL = "https://www.realtor.com/frontdoor/graphql"
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
     'Content-Type': 'application/json',
-    'Accept': 'application/json'
+    'Accept': 'application/json',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Origin': 'https://www.realtor.com',
+    'Referer': 'https://www.realtor.com/realestateagents',
+    'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="143"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-origin'
 }
 
 @app.route('/')
@@ -90,6 +99,10 @@ def find_agents_graphql(area):
         }
 
         response = requests.post(GRAPHQL_URL, json=location_query, headers=HEADERS, timeout=15)
+
+        print(f"Location search status: {response.status_code}")
+        print(f"Response text: {response.text[:500]}")
+
         location_data = response.json()
 
         if 'data' in location_data and 'agents_location_search' in location_data['data']:
