@@ -325,17 +325,7 @@ def stream_agents_in_location(slug_id):
         traceback.print_exc()
 
 def enrich_realtor(lead):
-    """Enrich realtor data"""
-
-    # Format recent sales from API data
-    recent_sales = []
-    raw_sales = lead.get('recentSales', [])
-    for sale in raw_sales[:5]:
-        recent_sales.append({
-            'address': f"{sale.get('city', '')}, {sale.get('state_code', '')}",
-            'date': 'Recently sold',
-            'price': f"{sale.get('beds', 'N/A')} bed, {sale.get('baths', 'N/A')} bath"
-        })
+    """Enrich realtor data - simplified for streaming"""
 
     # Calculate average home value from stats
     stats = lead.get('stats', {})
@@ -345,28 +335,28 @@ def enrich_realtor(lead):
         avg = (combined['min'] + combined['max']) / 2
         avg_value = f"${int(avg):,}"
 
+    # Clean strings - remove any characters that might break JSON
+    def clean_str(s):
+        if not s:
+            return ''
+        # Replace problematic characters
+        return str(s).replace('"', "'").replace('\n', ' ').replace('\r', ' ').strip()
+
     result = {
-        'firstName': lead.get('firstName', ''),
-        'lastName': lead.get('lastName', ''),
-        'email': lead.get('email', ''),
-        'phone': lead.get('phone', ''),
+        'firstName': clean_str(lead.get('firstName', '')),
+        'lastName': clean_str(lead.get('lastName', '')),
+        'email': clean_str(lead.get('email', '')),
+        'phone': clean_str(lead.get('phone', '')),
         'yearsExperience': 'Unknown',
-        'totalSales': lead.get('totalSales', 0),
-        'sales12Months': lead.get('sales12Months', 0),
-        'recentSales': recent_sales,
+        'totalSales': int(lead.get('totalSales', 0)),
+        'sales12Months': int(lead.get('sales12Months', 0)),
+        'recentSales': [],  # Skip for now to avoid JSON issues
         'areasWorked': [],
         'avgHomeValue': avg_value,
         'specializations': [],
         'awards': [],
-        'profileUrl': lead.get('profileUrl', ''),
-        'socialMedia': {
-            'facebook': '',
-            'linkedin': '',
-            'instagram': '',
-            'twitter': '',
-            'youtube': '',
-            'tiktok': ''
-        }
+        'profileUrl': clean_str(lead.get('profileUrl', '')),
+        'socialMedia': {}
     }
 
     return result
