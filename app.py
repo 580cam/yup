@@ -48,20 +48,36 @@ def scrape():
     print(f"Mode: {mode}")
 
     def generate():
-        """Stream results as they're fetched"""
+        """Stream results as they're fetched - in batches"""
         if mode == 'area':
             areas = data.get('areas', [])
             for area in areas:
-                # Stream agents as they're found
+                batch = []
+                # Stream agents in batches of 50
                 for agent in stream_agents_from_area(area):
+                    if agent is None:
+                        # Keepalive
+                        yield ": keepalive\n\n"
+                        continue
+
                     try:
                         enriched = enrich_realtor(agent)
-                        # Ensure proper JSON encoding - compact, no newlines
-                        json_str = json.dumps(enriched, ensure_ascii=True, separators=(',', ':'))
-                        yield f"data: {json_str}\n\n"
+                        batch.append(enriched)
+
+                        # Send batch when we have 50
+                        if len(batch) >= 50:
+                            json_str = json.dumps({'batch': batch}, ensure_ascii=True, separators=(',', ':'))
+                            yield f"data: {json_str}\n\n"
+                            batch = []
+
                     except Exception as e:
                         print(f"Error encoding agent: {e}")
                         continue
+
+                # Send remaining batch
+                if batch:
+                    json_str = json.dumps({'batch': batch}, ensure_ascii=True, separators=(',', ':'))
+                    yield f"data: {json_str}\n\n"
 
         elif mode == 'csv':
             leads = data.get('leads', [])
@@ -279,8 +295,8 @@ def stream_agents_in_location(slug_id):
                 print(f"Fetched all {total_rows} agents, stopping")
                 break
 
-            # No sleep - stream as fast as possible
-            # time.sleep(0.5)
+            # Send keepalive comment every page to prevent timeout
+            yield None  # Will send a keepalive in the generate function
 
         print(f"Streaming complete")
 
