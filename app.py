@@ -375,8 +375,13 @@ def init_zillow_session():
         # Visit Zillow homepage with ProxyJet rotating residential proxy
         proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
-        zillow_session.get('https://www.zillow.com/', impersonate="chrome120", proxies=proxies, timeout=20)
+        print(f"Initializing Zillow session with proxy: {PROXY_SERVER}")
+        response = zillow_session.get('https://www.zillow.com/', impersonate="chrome120", proxies=proxies, timeout=20)
+        print(f"Zillow homepage status: {response.status_code}")
         print(f"Zillow session initialized (ProxyJet residential proxy)")
+
+        # Add small delay to look more human
+        time.sleep(1)
     except Exception as e:
         print(f"Failed to init Zillow session: {e}")
         import traceback
@@ -416,6 +421,9 @@ def enrich_with_zillow(first_name, last_name, city_state):
         # Use ProxyJet rotating proxy - auto-rotates to new residential IP
         proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
+        # Small delay before each Zillow request (look more human)
+        time.sleep(0.5)
+
         # Use curl-cffi to impersonate real Chrome browser (TLS fingerprint)
         # Only fetch HTML, don't load images/CSS/JS
         response = zillow_session.get(
@@ -429,10 +437,10 @@ def enrich_with_zillow(first_name, last_name, city_state):
         )
 
         if response.status_code != 200:
-            print(f"Zillow returned status {response.status_code}")
+            print(f"Zillow search returned status {response.status_code}")
             return None
 
-        print(f"Zillow success! Status 200")
+        print(f"Zillow search success! Status 200")
 
         soup = BeautifulSoup(response.content, 'html.parser')
 
@@ -546,6 +554,9 @@ def scrape_zillow_profile(profile_url):
             'upgrade-insecure-requests': '1'
         }
 
+        # Small delay before profile request
+        time.sleep(0.5)
+
         # Use SAME session with SAME method as search
         response = zillow_session.get(
             profile_url,
@@ -560,6 +571,8 @@ def scrape_zillow_profile(profile_url):
         if response.status_code != 200:
             print(f"  Profile returned status {response.status_code}")
             return None
+
+        print(f"  Profile success! Status 200")
 
         soup = BeautifulSoup(response.content, 'html.parser')
 
