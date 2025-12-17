@@ -192,7 +192,11 @@ def scrape():
 def stream_agents_from_area(area):
     """Generator that yields agents one at a time as they're fetched"""
     try:
-        # Skip homepage visit - go straight to search
+        # Visit homepage ONCE to get cookies (including _px3!)
+        init_zillow_session()
+
+        # Wait 3-5s after getting cookies (look like browsing)
+        time.sleep(random.uniform(3.0, 5.0))
 
         # First, search for the location
         location_query = {
