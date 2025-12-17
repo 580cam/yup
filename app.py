@@ -526,17 +526,21 @@ def scrape_zillow_profile(profile_url):
     try:
         print(f"  Scraping profile: {profile_url}")
 
-        # Use ProxyJet proxy with new session to avoid 403
+        # Create FRESH session for profile - new cookies, new IP
+        fresh_session = curl_requests.Session()
         proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
-        # Set referer to look like we came from search page
+        # First visit Zillow homepage to get fresh cookies
+        fresh_session.get('https://www.zillow.com/', impersonate="chrome120", proxies=proxies, timeout=10)
+
+        # Then visit profile with proper referer
         profile_headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://www.zillow.com/professionals/real-estate-agent-reviews/',
+            'Referer': 'https://www.zillow.com/',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         }
 
-        response = zillow_session.get(profile_url, headers=profile_headers, impersonate="chrome120", proxies=proxies, timeout=20)
+        response = fresh_session.get(profile_url, headers=profile_headers, impersonate="chrome120", proxies=proxies, timeout=20)
 
         if response.status_code != 200:
             print(f"  Profile returned status {response.status_code}")
