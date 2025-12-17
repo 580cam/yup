@@ -8,6 +8,7 @@ import re
 from datetime import datetime
 from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
+from playwright_stealth import stealth_sync
 
 app = Flask(__name__)
 
@@ -491,7 +492,10 @@ def enrich_with_zillow(first_name, last_name, city_state):
             context = browser.new_context(user_agent=get_random_ua())
             page = context.new_page()
 
-            print(f"  Opening page with Playwright...")
+            # Apply stealth mode to hide automation
+            stealth_sync(page)
+
+            print(f"  Opening page with Playwright STEALTH...")
             page.goto(search_url, wait_until='networkidle', timeout=30000)
             time.sleep(3)  # Wait for JS
 
@@ -611,7 +615,10 @@ def scrape_zillow_profile(profile_url):
             context = browser.new_context(user_agent=get_random_ua())
             page = context.new_page()
 
-            print(f"  Opening profile with Playwright...")
+            # Apply stealth mode to hide automation
+            stealth_sync(page)
+
+            print(f"  Opening profile with Playwright STEALTH...")
             page.goto(profile_url, wait_until='networkidle', timeout=30000)
             time.sleep(3)  # Wait for JS
 
