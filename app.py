@@ -526,21 +526,36 @@ def scrape_zillow_profile(profile_url):
     try:
         print(f"  Scraping profile: {profile_url}")
 
-        # Create FRESH session for profile - new cookies, new IP
-        fresh_session = curl_requests.Session()
+        # Use SAME session and setup that works for search
         proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
-        # First visit Zillow homepage to get fresh cookies
-        fresh_session.get('https://www.zillow.com/', impersonate="chrome120", proxies=proxies, timeout=10)
-
-        # Then visit profile with proper referer
-        profile_headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://www.zillow.com/',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        # Use SAME headers as search - this is what works!
+        zillow_headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Referer': 'https://www.zillow.com/professionals/real-estate-agent-reviews/',
+            'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="143"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'same-origin',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1'
         }
 
-        response = fresh_session.get(profile_url, headers=profile_headers, impersonate="chrome120", proxies=proxies, timeout=20)
+        # Use SAME session with SAME method as search
+        response = zillow_session.get(
+            profile_url,
+            headers=zillow_headers,
+            impersonate="chrome120",
+            proxies=proxies,
+            timeout=20,
+            allow_redirects=True,
+            max_redirects=3
+        )
 
         if response.status_code != 200:
             print(f"  Profile returned status {response.status_code}")
