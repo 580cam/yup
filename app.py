@@ -7,7 +7,9 @@ import time
 import re
 from datetime import datetime
 from bs4 import BeautifulSoup
-from playwright.sync_api import sync_playwright
+from curl_cffi import requests as curl_requests
+
+zillow_session = curl_requests.Session()
 
 app = Flask(__name__)
 
@@ -477,30 +479,24 @@ def enrich_with_zillow(first_name, last_name, city_state):
         print(f"  Waiting {delay:.1f}s before request...")
         time.sleep(delay)
 
-        # Use Playwright with ProxyJet proxy - executes JavaScript!
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                proxy={
-                    'server': f'http://{PROXY_SERVER}',
-                    'username': PROXY_USERNAME,
-                    'password': PROXY_PASSWORD
-                }
-            )
+        # Use curl-cffi with ProxyJet proxy
+        proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
-            context = browser.new_context(user_agent=get_random_ua())
-            page = context.new_page()
+        response = zillow_session.get(
+            search_url,
+            headers=zillow_headers,
+            impersonate="chrome120",
+            proxies=proxies,
+            timeout=20
+        )
 
-            print(f"  Opening page with Playwright...")
-            page.goto(search_url, wait_until='networkidle', timeout=30000)
-            time.sleep(3)  # Wait for JS
+        if response.status_code != 200:
+            print(f"Zillow search returned status {response.status_code}")
+            return None
 
-            html = page.content()
-            browser.close()
+        print(f"Zillow search success! Status 200")
 
-        print(f"Zillow search success! Got HTML")
-
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(response.content, 'html.parser')
 
         # Find __NEXT_DATA__ script tag with JSON
         script_tag = soup.find('script', {'id': '__NEXT_DATA__'})
@@ -597,30 +593,24 @@ def scrape_zillow_profile(profile_url):
     try:
         print(f"  Scraping profile: {profile_url}")
 
-        # Use Playwright with ProxyJet proxy - executes JavaScript!
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                proxy={
-                    'server': f'http://{PROXY_SERVER}',
-                    'username': PROXY_USERNAME,
-                    'password': PROXY_PASSWORD
-                }
-            )
+        # Use curl-cffi with ProxyJet proxy
+        proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
-            context = browser.new_context(user_agent=get_random_ua())
-            page = context.new_page()
+        response = zillow_session.get(
+            profile_url,
+            headers=zillow_headers,
+            impersonate="chrome120",
+            proxies=proxies,
+            timeout=20
+        )
 
-            print(f"  Opening profile with Playwright...")
-            page.goto(profile_url, wait_until='networkidle', timeout=30000)
-            time.sleep(3)  # Wait for JS
+        if response.status_code != 200:
+            print(f"  Profile returned status {response.status_code}")
+            return None
 
-            html = page.content()
-            browser.close()
+        print(f"  Profile success! Status 200")
 
-        print(f"  Profile success! Got HTML")
-
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(response.content, 'html.parser')
 
         # Find __NEXT_DATA__ script
         script_tag = soup.find('script', {'id': '__NEXT_DATA__'})
