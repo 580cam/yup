@@ -519,10 +519,17 @@ def scrape_zillow_profile(profile_url):
     try:
         print(f"  Scraping profile: {profile_url}")
 
-        # Use ProxyJet proxy
+        # Use ProxyJet proxy with new session to avoid 403
         proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
-        response = zillow_session.get(profile_url, impersonate="chrome120", proxies=proxies, timeout=20)
+        # Set referer to look like we came from search page
+        profile_headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Referer': 'https://www.zillow.com/professionals/real-estate-agent-reviews/',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        }
+
+        response = zillow_session.get(profile_url, headers=profile_headers, impersonate="chrome120", proxies=proxies, timeout=20)
 
         if response.status_code != 200:
             print(f"  Profile returned status {response.status_code}")
