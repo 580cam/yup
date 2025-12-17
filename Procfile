@@ -1,1 +1,1 @@
-web: playwright install --with-deps chromium && gunicorn app:app --bind 0.0.0.0:$PORT --timeout 0 --worker-class gevent --workers 1
+web: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 0 --worker-class gevent --workers 1
