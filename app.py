@@ -432,8 +432,10 @@ def enrich_with_zillow(first_name, last_name, city_state):
         fresh_session = curl_requests.Session()
         proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
-        # Random delay before each Zillow request (1-3 seconds, look human)
-        time.sleep(random.uniform(1.0, 3.0))
+        # Random delay before each Zillow request (5-10 seconds, look human)
+        delay = random.uniform(5.0, 10.0)
+        print(f"  Waiting {delay:.1f}s before request...")
+        time.sleep(delay)
 
         # Use curl-cffi to impersonate real Chrome browser (TLS fingerprint)
         # Only fetch HTML, don't load images/CSS/JS
@@ -518,9 +520,10 @@ def enrich_with_zillow(first_name, last_name, city_state):
                 sales_last_12mo = int(data_val)
                 print(f"  12mo sales: {sales_last_12mo}")
 
-        # Wait 2-4 seconds before visiting profile (look like we clicked through)
-        print(f"  Waiting before profile visit...")
-        time.sleep(random.uniform(2.0, 4.0))
+        # Wait 5-10 seconds before visiting profile (look like we're reading results)
+        delay = random.uniform(5.0, 10.0)
+        print(f"  Waiting {delay:.1f}s before profile visit...")
+        time.sleep(delay)
 
         # Now scrape the actual profile page for full details
         profile_data = scrape_zillow_profile(zillow_url)
