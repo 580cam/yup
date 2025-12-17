@@ -521,6 +521,10 @@ def enrich_with_zillow(first_name, last_name, city_state):
                 sales_last_12mo = int(data_val)
                 print(f"  12mo sales: {sales_last_12mo}")
 
+        # Wait 2-4 seconds before visiting profile (look like we clicked through)
+        print(f"  Waiting before profile visit...")
+        time.sleep(random.uniform(2.0, 4.0))
+
         # Now scrape the actual profile page for full details
         profile_data = scrape_zillow_profile(zillow_url)
 
@@ -567,9 +571,6 @@ def scrape_zillow_profile(profile_url):
             'sec-fetch-user': '?1',
             'upgrade-insecure-requests': '1'
         }
-
-        # Random delay before profile request (1-3 seconds)
-        time.sleep(random.uniform(1.0, 3.0))
 
         # Use SAME session with SAME method as search
         response = zillow_session.get(
