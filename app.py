@@ -231,11 +231,12 @@ def stream_agents_from_area(area):
 
         try:
             location_data = response.json()
-        except:
-            print("Failed to parse location data JSON")
+            print(f"Location data keys: {location_data.keys() if location_data else 'None'}")
+        except Exception as e:
+            print(f"Failed to parse location data JSON: {e}")
             return
 
-        if location_data and 'data' in location_data and 'agents_location_search' in location_data['data']:
+        if location_data and 'data' in location_data and location_data['data'] and 'agents_location_search' in location_data['data']:
             locations = location_data['data']['agents_location_search']['auto_complete']
 
             if locations:
