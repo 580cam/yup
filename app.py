@@ -443,23 +443,32 @@ def enrich_with_zillow(first_name, last_name, city_state):
 
         print(f"Found {len(results)} Zillow results")
 
+        # Clean name for matching - remove punctuation, only keep letters and spaces
+        def clean_for_match(name):
+            import string
+            # Remove all punctuation except spaces
+            translator = str.maketrans('', '', string.punctuation)
+            cleaned = name.translate(translator)
+            # Normalize multiple spaces to single space
+            return ' '.join(cleaned.lower().split())
+
         # Find matching agent - bidirectional phrase match
         best_match = None
-        realtor_name_lower = full_name_realtor.lower()
+        realtor_clean = clean_for_match(full_name_realtor)
 
         for card in results:
             if card.get('__typename') == 'AgentDirectoryFinderProfileResultsCard':
                 card_name = card.get('cardTitle', '')
-                card_name_lower = card_name.lower()
+                zillow_clean = clean_for_match(card_name)
 
                 # Bidirectional match: does realtor contain zillow OR zillow contain realtor
-                if realtor_name_lower in card_name_lower or card_name_lower in realtor_name_lower:
+                if realtor_clean in zillow_clean or zillow_clean in realtor_clean:
                     best_match = card
-                    print(f"MATCH FOUND: '{card_name}' matches '{full_name_realtor}'")
+                    print(f"MATCH FOUND: '{card_name}' ≈ '{full_name_realtor}' (cleaned: '{zillow_clean}' ≈ '{realtor_clean}')")
                     break  # Take first match
 
         if not best_match:
-            print(f"No Zillow match for '{full_name_realtor}'")
+            print(f"No Zillow match for '{full_name_realtor}' (cleaned: '{realtor_clean}')")
             return None
 
         # Extract profile data from matched card
