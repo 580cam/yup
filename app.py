@@ -604,7 +604,7 @@ def scrape_zillow_profile(profile_url):
             'totalSalesAllTime': sales_stats.get('countAllTime', 0),
             'yearsExperience': get_to_know.get('yearsInIndustry', 0),
             'title': clean_str(get_to_know.get('title', '')),
-            'description': clean_str(get_to_know.get('description', ''))[:500],  # Limit length
+            'description': clean_str(get_to_know.get('description', '')),
             'specialties': [clean_str(s) for s in get_to_know.get('specialties', [])],
             'businessName': clean_str(display_user.get('businessName', '')),
             'businessAddress': clean_str(full_address.strip(', ')),
