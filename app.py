@@ -14,9 +14,11 @@ app = Flask(__name__)
 # Use curl-cffi for Zillow (impersonates real browser TLS)
 zillow_session = curl_requests.Session()
 
-# Proxy pool
-proxy_list = []
-proxy_index = 0
+# ProxyJet credentials
+PROXY_USERNAME = "251216vin3B-resi-US"  # rotating residential US
+PROXY_PASSWORD = "Ib4MCO7Q8YIsylv"
+PROXY_SERVER = "proxy-jet.io:1010"
+PROXY_URL = f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_SERVER}"
 
 GRAPHQL_URL = "https://www.realtor.com/frontdoor/graphql"
 HEADERS = {
@@ -63,6 +65,9 @@ def scrape():
             areas = data.get('areas', [])
             for area in areas:
                 batch = []
+                enriched_count = 0
+                max_enrich = 5  # TEST: Only enrich first 5 agents
+
                 # Stream agents in batches of 10 (smaller batches = more reliable)
                 for agent in stream_agents_from_area(area):
                     if agent is None:
@@ -71,7 +76,14 @@ def scrape():
                         continue
 
                     try:
-                        enriched = enrich_realtor(agent)
+                        # Only enrich first 5 with Zillow (TEST MODE)
+                        if enriched_count < max_enrich:
+                            enriched = enrich_realtor(agent)
+                            enriched_count += 1
+                        else:
+                            # Skip Zillow enrichment for others
+                            enriched = enrich_realtor_basic(agent)
+
                         batch.append(enriched)
 
                         # Send batch when we have 10
@@ -338,50 +350,18 @@ def stream_agents_in_location(slug_id):
         import traceback
         traceback.print_exc()
 
-def load_free_proxies():
-    """Load free proxies from multiple sources"""
-    global proxy_list
-    proxies = []
-
-    try:
-        # Source 1: ProxyScrape
-        r = requests.get('https://api.proxyscrape.com/v2/?request=get&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all', timeout=10)
-        proxies.extend(r.text.strip().split('\r\n'))
-
-        # Source 2: Free Proxy List
-        r = requests.get('https://www.proxy-list.download/api/v1/get?type=http', timeout=10)
-        proxies.extend(r.text.strip().split('\r\n'))
-
-        # Clean and dedupe
-        proxy_list = list(set([p.strip() for p in proxies if p.strip()]))[:100]  # Keep 100 proxies
-        print(f"Loaded {len(proxy_list)} free proxies")
-    except Exception as e:
-        print(f"Error loading proxies: {e}")
-        proxy_list = []
-
-def get_next_proxy():
-    """Get next proxy from pool (rotate)"""
-    global proxy_index
-    if not proxy_list:
-        return None
-
-    proxy_index = (proxy_index + 1) % len(proxy_list)
-    proxy = proxy_list[proxy_index]
-    return {'http': f'http://{proxy}', 'https': f'http://{proxy}'}
-
 def init_zillow_session():
     """Initialize Zillow session by visiting homepage to get cookies"""
     try:
-        # Load proxies on first run
-        if not proxy_list:
-            load_free_proxies()
+        # Visit Zillow homepage with ProxyJet rotating residential proxy
+        proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
-        # Visit Zillow homepage first to get cookies - impersonate Chrome
-        proxy = get_next_proxy()
-        zillow_session.get('https://www.zillow.com/', impersonate="chrome120", proxies=proxy, timeout=15)
-        print(f"Zillow session initialized (TLS impersonation, proxy: {bool(proxy)})")
+        zillow_session.get('https://www.zillow.com/', impersonate="chrome120", proxies=proxies, timeout=20)
+        print(f"Zillow session initialized (ProxyJet residential proxy)")
     except Exception as e:
         print(f"Failed to init Zillow session: {e}")
+        import traceback
+        traceback.print_exc()
 
 def enrich_with_zillow(first_name, last_name, city_state):
     """Search Zillow for agent and extract email, phone, total sales"""
@@ -415,17 +395,17 @@ def enrich_with_zillow(first_name, last_name, city_state):
             'upgrade-insecure-requests': '1'
         }
 
-        # Rotate proxy for each request
-        proxy = get_next_proxy()
+        # Use ProxyJet rotating proxy - auto-rotates to new residential IP
+        proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
         # Use curl-cffi to impersonate real Chrome browser (TLS fingerprint)
-        response = zillow_session.get(search_url, headers=zillow_headers, impersonate="chrome120", proxies=proxy, timeout=15)
+        response = zillow_session.get(search_url, headers=zillow_headers, impersonate="chrome120", proxies=proxies, timeout=20)
 
         if response.status_code != 200:
-            print(f"Zillow returned status {response.status_code} (proxy: {proxy})")
+            print(f"Zillow returned status {response.status_code}")
             return None
 
-        print(f"Zillow success! Status 200")
+        print(f"Zillow success! Status 200 for {first_clean} {last_clean}")
 
         soup = BeautifulSoup(response.content, 'html.parser')
 
@@ -482,6 +462,38 @@ def enrich_with_zillow(first_name, last_name, city_state):
         import traceback
         traceback.print_exc()
         return None
+
+def enrich_realtor_basic(lead):
+    """Basic enrichment without Zillow (no proxy usage)"""
+    stats = lead.get('stats', {})
+    combined = stats.get('combined_annual', {})
+    avg_value = 'N/A'
+    if combined.get('min') and combined.get('max'):
+        avg = (combined['min'] + combined['max']) / 2
+        avg_value = f"${int(avg):,}"
+
+    def clean_str(s):
+        if not s:
+            return ''
+        return str(s).replace('"', "'").replace('\n', ' ').replace('\r', ' ').strip()
+
+    return {
+        'firstName': clean_str(lead.get('firstName', '')),
+        'lastName': clean_str(lead.get('lastName', '')),
+        'email': '',
+        'phone': '',
+        'yearsExperience': 'Unknown',
+        'totalSales': int(lead.get('totalSales', 0)),
+        'sales12Months': int(lead.get('sales12Months', 0)),
+        'recentSales': [],
+        'areasWorked': [],
+        'avgHomeValue': avg_value,
+        'specializations': [],
+        'awards': [],
+        'profileUrl': clean_str(lead.get('profileUrl', '')),
+        'zillowUrl': '',
+        'socialMedia': {}
+    }
 
 def enrich_realtor(lead):
     """Enrich realtor data with Zillow info"""
