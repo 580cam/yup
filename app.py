@@ -7,12 +7,9 @@ import time
 import re
 from datetime import datetime
 from bs4 import BeautifulSoup
-from curl_cffi import requests as curl_requests
+from playwright.sync_api import sync_playwright
 
 app = Flask(__name__)
-
-# Use curl-cffi for Zillow (impersonates real browser TLS)
-zillow_session = curl_requests.Session()
 
 # Rotating user agents - look more real (30+ different browsers)
 USER_AGENTS = [
@@ -221,21 +218,33 @@ def stream_agents_from_area(area):
             }"""
         }
 
-        response = requests.post(GRAPHQL_URL, json=location_query, headers=HEADERS, timeout=15)
+        # Retry location search up to 3 times if it fails
+        location_data = None
+        for attempt in range(3):
+            response = requests.post(GRAPHQL_URL, json=location_query, headers=HEADERS, timeout=15)
 
-        print(f"Location search status: {response.status_code}")
+            print(f"Location search attempt {attempt + 1}: status {response.status_code}")
 
-        if response.status_code != 200:
-            print(f"Location search failed with status {response.status_code}")
-            return
+            if response.status_code != 200:
+                print(f"Location search failed with status {response.status_code}, retrying...")
+                time.sleep(2)
+                continue
 
-        try:
-            location_data = response.json()
-            if 'errors' in location_data:
-                print(f"Location search errors: {location_data['errors']}")
-                return
-        except Exception as e:
-            print(f"Failed to parse location data JSON: {e}")
+            try:
+                location_data = response.json()
+                if 'errors' in location_data:
+                    print(f"Location search errors: {location_data['errors']}, retrying...")
+                    time.sleep(2)
+                    continue
+                # Success!
+                break
+            except Exception as e:
+                print(f"Failed to parse location data JSON: {e}, retrying...")
+                time.sleep(2)
+                continue
+
+        if not location_data:
+            print("Location search failed after 3 attempts")
             return
 
         if location_data and 'data' in location_data and location_data['data'] and 'agents_location_search' in location_data['data']:
@@ -463,34 +472,35 @@ def enrich_with_zillow(first_name, last_name, city_state):
             'upgrade-insecure-requests': '1'
         }
 
-        # Create FRESH session for EACH request - new everything
-        fresh_session = curl_requests.Session()
-        proxies = {'http': PROXY_URL, 'https': PROXY_URL}
-
         # Random delay before each Zillow request (5-10 seconds, look human)
         delay = random.uniform(5.0, 10.0)
         print(f"  Waiting {delay:.1f}s before request...")
         time.sleep(delay)
 
-        # Use curl-cffi to impersonate real Chrome browser (TLS fingerprint)
-        # Only fetch HTML, don't load images/CSS/JS
-        response = fresh_session.get(
-            search_url,
-            headers=zillow_headers,
-            impersonate="chrome120",
-            proxies=proxies,
-            timeout=20,
-            allow_redirects=True,
-            max_redirects=3
-        )
+        # Use Playwright with ProxyJet proxy - executes JavaScript!
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                proxy={
+                    'server': f'http://{PROXY_SERVER}',
+                    'username': PROXY_USERNAME,
+                    'password': PROXY_PASSWORD
+                }
+            )
 
-        if response.status_code != 200:
-            print(f"Zillow search returned status {response.status_code}")
-            return None
+            context = browser.new_context(user_agent=get_random_ua())
+            page = context.new_page()
 
-        print(f"Zillow search success! Status 200")
+            print(f"  Opening page with Playwright...")
+            page.goto(search_url, wait_until='networkidle', timeout=30000)
+            time.sleep(3)  # Wait for JS
 
-        soup = BeautifulSoup(response.content, 'html.parser')
+            html = page.content()
+            browser.close()
+
+        print(f"Zillow search success! Got HTML")
+
+        soup = BeautifulSoup(html, 'html.parser')
 
         # Find __NEXT_DATA__ script tag with JSON
         script_tag = soup.find('script', {'id': '__NEXT_DATA__'})
@@ -587,45 +597,30 @@ def scrape_zillow_profile(profile_url):
     try:
         print(f"  Scraping profile: {profile_url}")
 
-        # Create FRESH session for profile - completely new
-        fresh_session = curl_requests.Session()
-        proxies = {'http': PROXY_URL, 'https': PROXY_URL}
+        # Use Playwright with ProxyJet proxy - executes JavaScript!
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                proxy={
+                    'server': f'http://{PROXY_SERVER}',
+                    'username': PROXY_USERNAME,
+                    'password': PROXY_PASSWORD
+                }
+            )
 
-        # Use SAME headers as search with rotating user agent
-        zillow_headers = {
-            'User-Agent': get_random_ua(),  # Rotate user agent
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Referer': 'https://www.zillow.com/professionals/real-estate-agent-reviews/',
-            'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="143"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'same-origin',
-            'sec-fetch-user': '?1',
-            'upgrade-insecure-requests': '1'
-        }
+            context = browser.new_context(user_agent=get_random_ua())
+            page = context.new_page()
 
-        # Use fresh session - completely new request
-        response = fresh_session.get(
-            profile_url,
-            headers=zillow_headers,
-            impersonate="chrome120",
-            proxies=proxies,
-            timeout=20,
-            allow_redirects=True,
-            max_redirects=3
-        )
+            print(f"  Opening profile with Playwright...")
+            page.goto(profile_url, wait_until='networkidle', timeout=30000)
+            time.sleep(3)  # Wait for JS
 
-        if response.status_code != 200:
-            print(f"  Profile returned status {response.status_code}")
-            return None
+            html = page.content()
+            browser.close()
 
-        print(f"  Profile success! Status 200")
+        print(f"  Profile success! Got HTML")
 
-        soup = BeautifulSoup(response.content, 'html.parser')
+        soup = BeautifulSoup(html, 'html.parser')
 
         # Find __NEXT_DATA__ script
         script_tag = soup.find('script', {'id': '__NEXT_DATA__'})
