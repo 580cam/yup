@@ -201,9 +201,17 @@ def stream_agents_from_area(area):
 
         print(f"Location search status: {response.status_code}")
 
-        location_data = response.json()
+        if response.status_code != 200:
+            print(f"Location search failed with status {response.status_code}")
+            return
 
-        if 'data' in location_data and 'agents_location_search' in location_data['data']:
+        try:
+            location_data = response.json()
+        except:
+            print("Failed to parse location data JSON")
+            return
+
+        if location_data and 'data' in location_data and 'agents_location_search' in location_data['data']:
             locations = location_data['data']['agents_location_search']['auto_complete']
 
             if locations:
