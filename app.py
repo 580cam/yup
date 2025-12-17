@@ -14,6 +14,20 @@ app = Flask(__name__)
 # Use curl-cffi for Zillow (impersonates real browser TLS)
 zillow_session = curl_requests.Session()
 
+# Rotating user agents - look more real
+USER_AGENTS = [
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Safari/605.1.15'
+]
+
+import random
+
+def get_random_ua():
+    return random.choice(USER_AGENTS)
+
 # ProxyJet credentials
 PROXY_USERNAME = "251216vin3B-resi-US"  # rotating residential US
 PROXY_PASSWORD = "Ib4MCO7Q8YIsylv"
@@ -401,9 +415,9 @@ def enrich_with_zillow(first_name, last_name, city_state):
 
         print(f"Searching Zillow for: {full_name_realtor}")
 
-        # Zillow-specific headers to avoid 403
+        # Zillow-specific headers with rotating user agent
         zillow_headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+            'User-Agent': get_random_ua(),  # Rotate user agent each request
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
@@ -421,8 +435,8 @@ def enrich_with_zillow(first_name, last_name, city_state):
         # Use ProxyJet rotating proxy - auto-rotates to new residential IP
         proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
-        # Small delay before each Zillow request (look more human)
-        time.sleep(0.5)
+        # Random delay before each Zillow request (1-3 seconds, look human)
+        time.sleep(random.uniform(1.0, 3.0))
 
         # Use curl-cffi to impersonate real Chrome browser (TLS fingerprint)
         # Only fetch HTML, don't load images/CSS/JS
@@ -537,9 +551,9 @@ def scrape_zillow_profile(profile_url):
         # Use SAME session and setup that works for search
         proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
-        # Use SAME headers as search - this is what works!
+        # Use SAME headers as search with rotating user agent
         zillow_headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+            'User-Agent': get_random_ua(),  # Rotate user agent
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
@@ -554,8 +568,8 @@ def scrape_zillow_profile(profile_url):
             'upgrade-insecure-requests': '1'
         }
 
-        # Small delay before profile request
-        time.sleep(0.5)
+        # Random delay before profile request (1-3 seconds)
+        time.sleep(random.uniform(1.0, 3.0))
 
         # Use SAME session with SAME method as search
         response = zillow_session.get(
