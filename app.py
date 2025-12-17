@@ -554,21 +554,32 @@ def enrich_realtor(lead):
     # Enrich with Zillow data
     zillow_data = enrich_with_zillow(first_name, last_name, city_state)
 
+    if zillow_data:
+        print(f"✓ Using Zillow data: {zillow_data.get('totalSalesInCity')} total sales, {zillow_data.get('sales12Months')} last 12mo")
+        total_sales = zillow_data.get('totalSalesInCity', 0)
+        sales_12mo = zillow_data.get('sales12Months', 0)
+        zillow_url = zillow_data.get('zillowUrl', '')
+    else:
+        print(f"✗ No Zillow data, using realtor.com stats")
+        total_sales = int(lead.get('totalSales', 0))
+        sales_12mo = int(lead.get('sales12Months', 0))
+        zillow_url = ''
+
     result = {
         'firstName': first_name,
         'lastName': last_name,
         'email': '',  # Will add profile scraping next
         'phone': '',
         'yearsExperience': 'Unknown',
-        'totalSales': zillow_data.get('totalSalesInCity', 0) if zillow_data else int(lead.get('totalSales', 0)),
-        'sales12Months': zillow_data.get('sales12Months', 0) if zillow_data else int(lead.get('sales12Months', 0)),
+        'totalSales': total_sales,
+        'sales12Months': sales_12mo,
         'recentSales': [],
         'areasWorked': [],
         'avgHomeValue': avg_value,
         'specializations': [],
         'awards': [],
         'profileUrl': clean_str(lead.get('profileUrl', '')),
-        'zillowUrl': zillow_data.get('zillowUrl', '') if zillow_data else '',
+        'zillowUrl': zillow_url,
         'socialMedia': {}
     }
 
@@ -584,7 +595,7 @@ def export_csv():
     if results:
         fieldnames = ['firstName', 'lastName', 'email', 'phone', 'yearsExperience',
                      'totalSales', 'sales12Months', 'areasWorked', 'avgHomeValue',
-                     'specializations', 'awards', 'profileUrl', 'facebook',
+                     'specializations', 'awards', 'profileUrl', 'zillowUrl', 'facebook',
                      'linkedin', 'instagram', 'twitter', 'youtube', 'tiktok']
         writer = csv.DictWriter(output, fieldnames=fieldnames)
         writer.writeheader()
@@ -603,6 +614,7 @@ def export_csv():
                 'specializations': '; '.join(result.get('specializations', [])),
                 'awards': '; '.join(result.get('awards', [])),
                 'profileUrl': result.get('profileUrl', ''),
+                'zillowUrl': result.get('zillowUrl', ''),
                 'facebook': result.get('socialMedia', {}).get('facebook', ''),
                 'linkedin': result.get('socialMedia', {}).get('linkedin', ''),
                 'instagram': result.get('socialMedia', {}).get('instagram', ''),
