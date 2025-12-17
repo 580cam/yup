@@ -225,6 +225,7 @@ def stream_agents_in_location(slug_id):
         offset = 0
         limit = 50
         total_rows = None
+        seen_agent_ids = set()  # Track unique agents to prevent duplicates
 
         # Paginate through all results
         while True:
@@ -312,6 +313,14 @@ def stream_agents_in_location(slug_id):
                 break
 
             for agent in agent_list:
+                # Build profile URL from agent ID (not fulfillment_id!)
+                agent_id = agent.get('id', '')
+
+                # Skip duplicates
+                if agent_id in seen_agent_ids:
+                    continue
+                seen_agent_ids.add(agent_id)
+
                 # Parse agent data
                 full_name = agent.get('fullname', '')
                 name_parts = full_name.split()
@@ -319,8 +328,6 @@ def stream_agents_in_location(slug_id):
                 first_name = name_parts[0] if name_parts else ''
                 last_name = ' '.join(name_parts[1:]) if len(name_parts) > 1 else ''
 
-                # Build profile URL from agent ID (not fulfillment_id!)
-                agent_id = agent.get('id', '')
                 profile_url = f"https://www.realtor.com/realestateagents/{agent_id}" if agent_id else ''
 
                 # Get sales stats
