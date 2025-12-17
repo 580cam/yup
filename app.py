@@ -492,6 +492,17 @@ def enrich_with_zillow(first_name, last_name, city_state):
                 sales_last_12mo = int(data_val)
                 print(f"  12mo sales: {sales_last_12mo}")
 
+        # Now scrape the actual profile page for full details
+        profile_data = scrape_zillow_profile(zillow_url)
+
+        if profile_data:
+            return {
+                'zillowUrl': zillow_url,
+                'totalSalesInCity': total_sales_in_city,
+                'sales12Months': sales_last_12mo,
+                **profile_data  # Merge profile data
+            }
+
         return {
             'zillowUrl': zillow_url,
             'totalSalesInCity': total_sales_in_city,
@@ -501,6 +512,68 @@ def enrich_with_zillow(first_name, last_name, city_state):
         print(f"Error enriching with Zillow for {first_name} {last_name}: {e}")
         import traceback
         traceback.print_exc()
+        return None
+
+def scrape_zillow_profile(profile_url):
+    """Scrape detailed info from Zillow profile page"""
+    try:
+        print(f"  Scraping profile: {profile_url}")
+
+        # Use ProxyJet proxy
+        proxies = {'http': PROXY_URL, 'https': PROXY_URL}
+
+        response = zillow_session.get(profile_url, impersonate="chrome120", proxies=proxies, timeout=20)
+
+        if response.status_code != 200:
+            print(f"  Profile returned status {response.status_code}")
+            return None
+
+        soup = BeautifulSoup(response.content, 'html.parser')
+
+        # Find __NEXT_DATA__ script
+        script_tag = soup.find('script', {'id': '__NEXT_DATA__'})
+        if not script_tag:
+            print("  No __NEXT_DATA__ on profile")
+            return None
+
+        data = json.loads(script_tag.string)
+        props = data.get('props', {}).get('pageProps', {})
+
+        # Extract all the data
+        display_user = props.get('displayUser', {})
+        sales_stats = props.get('agentSalesStats', {})
+        get_to_know = props.get('getToKnowMe', {})
+
+        email = display_user.get('email', '')
+        phone_numbers = display_user.get('phoneNumbers', {})
+        cell_phone = phone_numbers.get('cell', '')
+        brokerage_phone = phone_numbers.get('brokerage', '')
+        business_address = display_user.get('businessAddress', {})
+        full_address = f"{business_address.get('address1', '')}, {business_address.get('city', '')}, {business_address.get('state', '')} {business_address.get('postalCode', '')}"
+
+        result = {
+            'email': email,
+            'phone': cell_phone,
+            'brokeragePhone': brokerage_phone,
+            'totalSalesAllTime': sales_stats.get('countAllTime', 0),
+            'yearsExperience': get_to_know.get('yearsInIndustry', 0),
+            'title': get_to_know.get('title', ''),
+            'description': get_to_know.get('description', ''),
+            'specialties': get_to_know.get('specialties', []),
+            'businessName': display_user.get('businessName', ''),
+            'businessAddress': full_address.strip(', '),
+            'pronouns': display_user.get('cpdUserPronouns', ''),
+            'websiteUrl': get_to_know.get('websiteUrl', ''),
+            'facebookUrl': get_to_know.get('facebookUrl', ''),
+            'linkedInUrl': get_to_know.get('linkedInUrl', '')
+        }
+
+        print(f"  ✓ Got profile data: {email}, {cell_phone}, {sales_stats.get('countAllTime', 0)} total sales")
+
+        return result
+
+    except Exception as e:
+        print(f"  Error scraping profile: {e}")
         return None
 
 def enrich_realtor_basic(lead):
@@ -564,33 +637,64 @@ def enrich_realtor(lead):
     zillow_data = enrich_with_zillow(first_name, last_name, city_state)
 
     if zillow_data:
-        print(f"✓ Using Zillow data: {zillow_data.get('totalSalesInCity')} total sales, {zillow_data.get('sales12Months')} last 12mo")
-        total_sales = zillow_data.get('totalSalesInCity', 0)
-        sales_12mo = zillow_data.get('sales12Months', 0)
-        zillow_url = zillow_data.get('zillowUrl', '')
+        print(f"✓ Using Zillow data")
+        result = {
+            'firstName': first_name,
+            'lastName': last_name,
+            'email': zillow_data.get('email', ''),
+            'phone': zillow_data.get('phone', ''),
+            'brokeragePhone': zillow_data.get('brokeragePhone', ''),
+            'yearsExperience': f"{zillow_data.get('yearsExperience', 0)} years" if zillow_data.get('yearsExperience') else 'Unknown',
+            'totalSales': zillow_data.get('totalSalesAllTime', 0),
+            'sales12Months': zillow_data.get('sales12Months', 0),
+            'title': zillow_data.get('title', ''),
+            'description': zillow_data.get('description', ''),
+            'specialties': zillow_data.get('specialties', []),
+            'businessName': zillow_data.get('businessName', ''),
+            'businessAddress': zillow_data.get('businessAddress', ''),
+            'pronouns': zillow_data.get('pronouns', ''),
+            'websiteUrl': zillow_data.get('websiteUrl', ''),
+            'recentSales': [],
+            'areasWorked': [],
+            'avgHomeValue': avg_value,
+            'awards': [],
+            'profileUrl': clean_str(lead.get('profileUrl', '')),
+            'zillowUrl': zillow_data.get('zillowUrl', ''),
+            'socialMedia': {
+                'facebook': zillow_data.get('facebookUrl', ''),
+                'linkedin': zillow_data.get('linkedInUrl', ''),
+                'instagram': '',
+                'twitter': '',
+                'youtube': '',
+                'tiktok': ''
+            }
+        }
     else:
         print(f"✗ No Zillow data, using realtor.com stats")
-        total_sales = int(lead.get('totalSales', 0))
-        sales_12mo = int(lead.get('sales12Months', 0))
-        zillow_url = ''
-
-    result = {
-        'firstName': first_name,
-        'lastName': last_name,
-        'email': '',  # Will add profile scraping next
-        'phone': '',
-        'yearsExperience': 'Unknown',
-        'totalSales': total_sales,
-        'sales12Months': sales_12mo,
-        'recentSales': [],
-        'areasWorked': [],
-        'avgHomeValue': avg_value,
-        'specializations': [],
-        'awards': [],
-        'profileUrl': clean_str(lead.get('profileUrl', '')),
-        'zillowUrl': zillow_url,
-        'socialMedia': {}
-    }
+        result = {
+            'firstName': first_name,
+            'lastName': last_name,
+            'email': '',
+            'phone': '',
+            'brokeragePhone': '',
+            'yearsExperience': 'Unknown',
+            'totalSales': int(lead.get('totalSales', 0)),
+            'sales12Months': int(lead.get('sales12Months', 0)),
+            'title': '',
+            'description': '',
+            'specialties': [],
+            'businessName': '',
+            'businessAddress': '',
+            'pronouns': '',
+            'websiteUrl': '',
+            'recentSales': [],
+            'areasWorked': [],
+            'avgHomeValue': avg_value,
+            'awards': [],
+            'profileUrl': clean_str(lead.get('profileUrl', '')),
+            'zillowUrl': '',
+            'socialMedia': {}
+        }
 
     return result
 
@@ -602,10 +706,11 @@ def export_csv():
     # Create CSV
     output = io.StringIO()
     if results:
-        fieldnames = ['firstName', 'lastName', 'email', 'phone', 'yearsExperience',
-                     'totalSales', 'sales12Months', 'areasWorked', 'avgHomeValue',
-                     'specializations', 'awards', 'profileUrl', 'zillowUrl', 'facebook',
-                     'linkedin', 'instagram', 'twitter', 'youtube', 'tiktok']
+        fieldnames = ['firstName', 'lastName', 'email', 'phone', 'brokeragePhone',
+                     'yearsExperience', 'totalSales', 'sales12Months', 'title', 'description',
+                     'specialties', 'businessName', 'businessAddress', 'pronouns', 'websiteUrl',
+                     'avgHomeValue', 'profileUrl', 'zillowUrl', 'facebook', 'linkedin',
+                     'instagram', 'twitter', 'youtube', 'tiktok']
         writer = csv.DictWriter(output, fieldnames=fieldnames)
         writer.writeheader()
 
@@ -615,13 +720,18 @@ def export_csv():
                 'lastName': result.get('lastName', ''),
                 'email': result.get('email', ''),
                 'phone': result.get('phone', ''),
+                'brokeragePhone': result.get('brokeragePhone', ''),
                 'yearsExperience': result.get('yearsExperience', ''),
                 'totalSales': result.get('totalSales', 0),
                 'sales12Months': result.get('sales12Months', 0),
-                'areasWorked': '; '.join(result.get('areasWorked', [])),
+                'title': result.get('title', ''),
+                'description': result.get('description', '').replace('\n', ' ').strip(),
+                'specialties': '; '.join(result.get('specialties', [])),
+                'businessName': result.get('businessName', ''),
+                'businessAddress': result.get('businessAddress', ''),
+                'pronouns': result.get('pronouns', ''),
+                'websiteUrl': result.get('websiteUrl', ''),
                 'avgHomeValue': result.get('avgHomeValue', ''),
-                'specializations': '; '.join(result.get('specializations', [])),
-                'awards': '; '.join(result.get('awards', [])),
                 'profileUrl': result.get('profileUrl', ''),
                 'zillowUrl': result.get('zillowUrl', ''),
                 'facebook': result.get('socialMedia', {}).get('facebook', ''),
