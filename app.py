@@ -80,7 +80,7 @@ def scrape():
             for area in areas:
                 batch = []
                 enriched_count = 0
-                max_enrich = 5  # TEST: Only enrich first 5 agents
+                max_enrich = 10  # TEST: Increased to 10 to see pattern
                 total_agents = 0
 
                 # Stream agents in batches of 10 (smaller batches = more reliable)
