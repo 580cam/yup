@@ -172,6 +172,9 @@ def stream_agents_from_area(area):
         # Initialize Zillow session to get cookies
         init_zillow_session()
 
+        # Wait 2-4 seconds after init (look like we're browsing)
+        time.sleep(random.uniform(2.0, 4.0))
+
         # First, search for the location
         location_query = {
             "operationName": "AgentLocationSearch",
@@ -392,10 +395,7 @@ def init_zillow_session():
         print(f"Initializing Zillow session with proxy: {PROXY_SERVER}")
         response = zillow_session.get('https://www.zillow.com/', impersonate="chrome120", proxies=proxies, timeout=20)
         print(f"Zillow homepage status: {response.status_code}")
-        print(f"Zillow session initialized (ProxyJet residential proxy)")
-
-        # Add small delay to look more human
-        time.sleep(1)
+        print(f"Zillow session initialized - waiting before first request...")
     except Exception as e:
         print(f"Failed to init Zillow session: {e}")
         import traceback
