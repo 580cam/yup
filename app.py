@@ -169,11 +169,7 @@ def scrape():
 def stream_agents_from_area(area):
     """Generator that yields agents one at a time as they're fetched"""
     try:
-        # Initialize Zillow session to get cookies
-        init_zillow_session()
-
-        # Wait 2-4 seconds after init (look like we're browsing)
-        time.sleep(random.uniform(2.0, 4.0))
+        # Skip homepage visit - go straight to search
 
         # First, search for the location
         location_query = {
@@ -432,7 +428,8 @@ def enrich_with_zillow(first_name, last_name, city_state):
             'upgrade-insecure-requests': '1'
         }
 
-        # Use ProxyJet rotating proxy - auto-rotates to new residential IP
+        # Create FRESH session for EACH request - new everything
+        fresh_session = curl_requests.Session()
         proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
         # Random delay before each Zillow request (1-3 seconds, look human)
@@ -440,7 +437,7 @@ def enrich_with_zillow(first_name, last_name, city_state):
 
         # Use curl-cffi to impersonate real Chrome browser (TLS fingerprint)
         # Only fetch HTML, don't load images/CSS/JS
-        response = zillow_session.get(
+        response = fresh_session.get(
             search_url,
             headers=zillow_headers,
             impersonate="chrome120",
@@ -552,7 +549,8 @@ def scrape_zillow_profile(profile_url):
     try:
         print(f"  Scraping profile: {profile_url}")
 
-        # Use SAME session and setup that works for search
+        # Create FRESH session for profile - completely new
+        fresh_session = curl_requests.Session()
         proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
         # Use SAME headers as search with rotating user agent
@@ -572,8 +570,8 @@ def scrape_zillow_profile(profile_url):
             'upgrade-insecure-requests': '1'
         }
 
-        # Use SAME session with SAME method as search
-        response = zillow_session.get(
+        # Use fresh session - completely new request
+        response = fresh_session.get(
             profile_url,
             headers=zillow_headers,
             impersonate="chrome120",
