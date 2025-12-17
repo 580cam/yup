@@ -425,7 +425,7 @@ def enrich_with_zillow(first_name, last_name, city_state):
             print(f"Zillow returned status {response.status_code}")
             return None
 
-        print(f"Zillow success! Status 200 for {first_clean} {last_clean}")
+        print(f"Zillow success! Status 200")
 
         soup = BeautifulSoup(response.content, 'html.parser')
 
