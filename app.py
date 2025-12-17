@@ -231,7 +231,9 @@ def stream_agents_from_area(area):
 
         try:
             location_data = response.json()
-            print(f"Location data keys: {location_data.keys() if location_data else 'None'}")
+            if 'errors' in location_data:
+                print(f"Location search errors: {location_data['errors']}")
+                return
         except Exception as e:
             print(f"Failed to parse location data JSON: {e}")
             return
