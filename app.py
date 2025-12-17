@@ -576,6 +576,7 @@ def scrape_zillow_profile(profile_url):
         display_user = props.get('displayUser', {})
         sales_stats = props.get('agentSalesStats', {})
         get_to_know = props.get('getToKnowMe', {})
+        past_sales = props.get('pastSales', {})
 
         email = display_user.get('email', '')
         phone_numbers = display_user.get('phoneNumbers', {})
@@ -597,6 +598,15 @@ def scrape_zillow_profile(profile_url):
             s = ''.join(char for char in s if ord(char) >= 32 or char == '\n')
             return s.strip()
 
+        # Get latest sale
+        latest_sale_address = ''
+        latest_sale_date = ''
+        past_sales_list = past_sales.get('past_sales', [])
+        if past_sales_list and len(past_sales_list) > 0:
+            latest = past_sales_list[0]
+            latest_sale_address = clean_str(latest.get('street_address', ''))
+            latest_sale_date = clean_str(latest.get('sold_date', ''))
+
         result = {
             'email': clean_str(email),
             'phone': clean_str(cell_phone),
@@ -611,7 +621,9 @@ def scrape_zillow_profile(profile_url):
             'pronouns': clean_str(display_user.get('cpdUserPronouns', '')),
             'websiteUrl': clean_str(get_to_know.get('websiteUrl', '')),
             'facebookUrl': clean_str(get_to_know.get('facebookUrl', '')),
-            'linkedInUrl': clean_str(get_to_know.get('linkedInUrl', ''))
+            'linkedInUrl': clean_str(get_to_know.get('linkedInUrl', '')),
+            'latestSaleAddress': latest_sale_address,
+            'latestSaleDate': latest_sale_date
         }
 
         print(f"  ✓ Got profile data: {email}, {cell_phone}, {sales_stats.get('countAllTime', 0)} total sales")
@@ -684,31 +696,38 @@ def enrich_realtor(lead):
 
     if zillow_data:
         print(f"✓ Using Zillow data")
+
+        # Clean specialty list
+        specialties = zillow_data.get('specialties', [])
+        clean_specialties = [clean_str(s) for s in specialties] if isinstance(specialties, list) else []
+
         result = {
             'firstName': first_name,
             'lastName': last_name,
-            'email': zillow_data.get('email', ''),
-            'phone': zillow_data.get('phone', ''),
-            'brokeragePhone': zillow_data.get('brokeragePhone', ''),
+            'email': clean_str(zillow_data.get('email', '')),
+            'phone': clean_str(zillow_data.get('phone', '')),
+            'brokeragePhone': clean_str(zillow_data.get('brokeragePhone', '')),
             'yearsExperience': f"{zillow_data.get('yearsExperience', 0)} years" if zillow_data.get('yearsExperience') else 'Unknown',
-            'totalSales': zillow_data.get('totalSalesAllTime', 0),
-            'sales12Months': zillow_data.get('sales12Months', 0),
-            'title': zillow_data.get('title', ''),
-            'description': zillow_data.get('description', ''),
-            'specialties': zillow_data.get('specialties', []),
-            'businessName': zillow_data.get('businessName', ''),
-            'businessAddress': zillow_data.get('businessAddress', ''),
-            'pronouns': zillow_data.get('pronouns', ''),
-            'websiteUrl': zillow_data.get('websiteUrl', ''),
+            'totalSales': int(zillow_data.get('totalSalesAllTime', 0) or 0),
+            'sales12Months': int(zillow_data.get('sales12Months', 0) or 0),
+            'title': clean_str(zillow_data.get('title', '')),
+            'description': clean_str(zillow_data.get('description', '')),
+            'specialties': clean_specialties,
+            'businessName': clean_str(zillow_data.get('businessName', '')),
+            'businessAddress': clean_str(zillow_data.get('businessAddress', '')),
+            'pronouns': clean_str(zillow_data.get('pronouns', '')),
+            'websiteUrl': clean_str(zillow_data.get('websiteUrl', '')),
+            'latestSaleAddress': clean_str(zillow_data.get('latestSaleAddress', '')),
+            'latestSaleDate': clean_str(zillow_data.get('latestSaleDate', '')),
             'recentSales': [],
             'areasWorked': [],
             'avgHomeValue': avg_value,
             'awards': [],
             'profileUrl': clean_str(lead.get('profileUrl', '')),
-            'zillowUrl': zillow_data.get('zillowUrl', ''),
+            'zillowUrl': clean_str(zillow_data.get('zillowUrl', '')),
             'socialMedia': {
-                'facebook': zillow_data.get('facebookUrl', ''),
-                'linkedin': zillow_data.get('linkedInUrl', ''),
+                'facebook': clean_str(zillow_data.get('facebookUrl', '')),
+                'linkedin': clean_str(zillow_data.get('linkedInUrl', '')),
                 'instagram': '',
                 'twitter': '',
                 'youtube': '',
@@ -755,8 +774,8 @@ def export_csv():
         fieldnames = ['firstName', 'lastName', 'email', 'phone', 'brokeragePhone',
                      'yearsExperience', 'totalSales', 'sales12Months', 'title', 'description',
                      'specialties', 'businessName', 'businessAddress', 'pronouns', 'websiteUrl',
-                     'avgHomeValue', 'profileUrl', 'zillowUrl', 'facebook', 'linkedin',
-                     'instagram', 'twitter', 'youtube', 'tiktok']
+                     'latestSaleAddress', 'latestSaleDate', 'avgHomeValue', 'profileUrl', 'zillowUrl',
+                     'facebook', 'linkedin', 'instagram', 'twitter', 'youtube', 'tiktok']
         writer = csv.DictWriter(output, fieldnames=fieldnames)
         writer.writeheader()
 
@@ -777,6 +796,8 @@ def export_csv():
                 'businessAddress': result.get('businessAddress', ''),
                 'pronouns': result.get('pronouns', ''),
                 'websiteUrl': result.get('websiteUrl', ''),
+                'latestSaleAddress': result.get('latestSaleAddress', ''),
+                'latestSaleDate': result.get('latestSaleDate', ''),
                 'avgHomeValue': result.get('avgHomeValue', ''),
                 'profileUrl': result.get('profileUrl', ''),
                 'zillowUrl': result.get('zillowUrl', ''),
