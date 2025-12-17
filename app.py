@@ -592,11 +592,13 @@ def scrape_zillow_profile(profile_url):
             # Remove HTML tags
             import re
             s = re.sub(r'<[^>]+>', '', str(s))
-            # Replace problematic chars
-            s = s.replace('"', "'").replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+            # Replace ALL problematic chars
+            s = s.replace('\\', '').replace('"', '').replace("'", '').replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+            # Only keep alphanumeric, spaces, basic punctuation
+            s = re.sub(r'[^\w\s\.,!?@\-\(\)\/]', '', s)
             # Remove any control characters
-            s = ''.join(char for char in s if ord(char) >= 32 or char == '\n')
-            return s.strip()
+            s = ''.join(char for char in s if ord(char) >= 32)
+            return ' '.join(s.split())  # Normalize whitespace
 
         # Get latest sale
         latest_sale_address = ''
