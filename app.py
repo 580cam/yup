@@ -67,6 +67,7 @@ def scrape():
                 batch = []
                 enriched_count = 0
                 max_enrich = 5  # TEST: Only enrich first 5 agents
+                total_agents = 0
 
                 # Stream agents in batches of 10 (smaller batches = more reliable)
                 for agent in stream_agents_from_area(area):
@@ -75,13 +76,24 @@ def scrape():
                         yield ": keepalive\n\n"
                         continue
 
+                    total_agents += 1
+
                     try:
                         # Only enrich first 5 with Zillow (TEST MODE)
                         if enriched_count < max_enrich:
+                            print(f"")
+                            print(f"========================================")
+                            print(f"ZILLOW ENRICHMENT #{enriched_count + 1} OF {max_enrich}")
+                            print(f"========================================")
                             enriched = enrich_realtor(agent)
                             enriched_count += 1
                         else:
-                            # Skip Zillow enrichment for others
+                            # Skip Zillow enrichment for rest
+                            if total_agents == max_enrich + 1:
+                                print(f"")
+                                print(f"*** STOPPING ZILLOW ENRICHMENT - REACHED {max_enrich} LIMIT ***")
+                                print(f"*** Remaining {5291 - max_enrich} agents will get basic data only ***")
+                                print(f"")
                             enriched = enrich_realtor_basic(agent)
 
                         batch.append(enriched)
@@ -398,7 +410,16 @@ def enrich_with_zillow(first_name, last_name, city_state):
         proxies = {'http': PROXY_URL, 'https': PROXY_URL}
 
         # Use curl-cffi to impersonate real Chrome browser (TLS fingerprint)
-        response = zillow_session.get(search_url, headers=zillow_headers, impersonate="chrome120", proxies=proxies, timeout=20)
+        # Only fetch HTML, don't load images/CSS/JS
+        response = zillow_session.get(
+            search_url,
+            headers=zillow_headers,
+            impersonate="chrome120",
+            proxies=proxies,
+            timeout=20,
+            allow_redirects=True,
+            max_redirects=3
+        )
 
         if response.status_code != 200:
             print(f"Zillow returned status {response.status_code}")
