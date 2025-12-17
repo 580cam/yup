@@ -366,17 +366,16 @@ def init_zillow_session():
 def enrich_with_zillow(first_name, last_name, city_state):
     """Search Zillow for agent and extract email, phone, total sales"""
     try:
-        # Clean names - remove titles, commas, etc
-        first_clean = first_name.split(',')[0].strip()
-        last_clean = last_name.split(',')[0].strip()
+        # Combine full name from realtor.com
+        full_name_realtor = f"{first_name} {last_name}".strip()
 
         # URL encode the names
         from urllib.parse import quote_plus
-        name_query = quote_plus(f"{first_clean} {last_clean}")
+        name_query = quote_plus(full_name_realtor)
 
         search_url = f"https://www.zillow.com/professionals/real-estate-agent-reviews/{city_state.lower().replace(' ', '-')}/?name={name_query}"
 
-        print(f"Searching Zillow for {first_clean} {last_clean}")
+        print(f"Searching Zillow for: {full_name_realtor}")
 
         # Zillow-specific headers to avoid 403
         zillow_headers = {
@@ -421,42 +420,53 @@ def enrich_with_zillow(first_name, last_name, city_state):
         props = data.get('props', {}).get('pageProps', {}).get('displayData', {})
         results = props.get('agentFinderGraphData', {}).get('agentDirectoryFinderDisplay', {}).get('searchResults', {}).get('results', {}).get('resultsCards', [])
 
-        print(f"Found {len(results)} Zillow results for {first_name} {last_name}")
+        print(f"Found {len(results)} Zillow results")
 
-        # Find matching agent
+        # Find matching agent - bidirectional phrase match
+        best_match = None
+        realtor_name_lower = full_name_realtor.lower()
+
         for card in results:
             if card.get('__typename') == 'AgentDirectoryFinderProfileResultsCard':
-                card_name = card.get('cardTitle', '').lower()
-                if first_name.lower() in card_name and last_name.lower() in card_name:
-                    # Extract profile data
-                    profile_data = card.get('profileData', [])
-                    zillow_url = card.get('cardActionLink', '')
+                card_name = card.get('cardTitle', '')
+                card_name_lower = card_name.lower()
 
-                    print(f"MATCH FOUND: {card_name} -> {zillow_url}")
+                # Bidirectional match: does realtor contain zillow OR zillow contain realtor
+                if realtor_name_lower in card_name_lower or card_name_lower in realtor_name_lower:
+                    best_match = card
+                    print(f"MATCH FOUND: '{card_name}' matches '{full_name_realtor}'")
+                    break  # Take first match
 
-                    # Parse sales data
-                    total_sales_in_city = 0
-                    sales_last_12mo = 0
+        if not best_match:
+            print(f"No Zillow match for '{full_name_realtor}'")
+            return None
 
-                    for item in profile_data:
-                        label = item.get('label', '').lower()
-                        data_val = item.get('data')
+        # Extract profile data from matched card
+        profile_data = best_match.get('profileData', [])
+        zillow_url = best_match.get('cardActionLink', '')
 
-                        if 'sales in' in label and data_val:
-                            total_sales_in_city = int(data_val)
-                            print(f"  Total sales: {total_sales_in_city}")
-                        elif 'sales last 12 months' in label and data_val:
-                            sales_last_12mo = int(data_val)
-                            print(f"  12mo sales: {sales_last_12mo}")
+        print(f"Zillow URL: {zillow_url}")
 
-                    return {
-                        'zillowUrl': zillow_url,
-                        'totalSalesInCity': total_sales_in_city,
-                        'sales12Months': sales_last_12mo
-                    }
+        # Parse sales data
+        total_sales_in_city = 0
+        sales_last_12mo = 0
 
-        print(f"No Zillow match for {first_name} {last_name}")
-        return None
+        for item in profile_data:
+            label = item.get('label', '').lower()
+            data_val = item.get('data')
+
+            if 'sales in' in label and data_val:
+                total_sales_in_city = int(data_val)
+                print(f"  Total sales: {total_sales_in_city}")
+            elif 'sales last 12 months' in label and data_val:
+                sales_last_12mo = int(data_val)
+                print(f"  12mo sales: {sales_last_12mo}")
+
+        return {
+            'zillowUrl': zillow_url,
+            'totalSalesInCity': total_sales_in_city,
+            'sales12Months': sales_last_12mo
+        }
     except Exception as e:
         print(f"Error enriching with Zillow for {first_name} {last_name}: {e}")
         import traceback
