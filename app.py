@@ -584,21 +584,34 @@ def scrape_zillow_profile(profile_url):
         business_address = display_user.get('businessAddress', {})
         full_address = f"{business_address.get('address1', '')}, {business_address.get('city', '')}, {business_address.get('state', '')} {business_address.get('postalCode', '')}"
 
+        # Clean all strings to prevent JSON errors
+        def clean_str(s):
+            if not s:
+                return ''
+            # Remove HTML tags
+            import re
+            s = re.sub(r'<[^>]+>', '', str(s))
+            # Replace problematic chars
+            s = s.replace('"', "'").replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
+            # Remove any control characters
+            s = ''.join(char for char in s if ord(char) >= 32 or char == '\n')
+            return s.strip()
+
         result = {
-            'email': email,
-            'phone': cell_phone,
-            'brokeragePhone': brokerage_phone,
+            'email': clean_str(email),
+            'phone': clean_str(cell_phone),
+            'brokeragePhone': clean_str(brokerage_phone),
             'totalSalesAllTime': sales_stats.get('countAllTime', 0),
             'yearsExperience': get_to_know.get('yearsInIndustry', 0),
-            'title': get_to_know.get('title', ''),
-            'description': get_to_know.get('description', ''),
-            'specialties': get_to_know.get('specialties', []),
-            'businessName': display_user.get('businessName', ''),
-            'businessAddress': full_address.strip(', '),
-            'pronouns': display_user.get('cpdUserPronouns', ''),
-            'websiteUrl': get_to_know.get('websiteUrl', ''),
-            'facebookUrl': get_to_know.get('facebookUrl', ''),
-            'linkedInUrl': get_to_know.get('linkedInUrl', '')
+            'title': clean_str(get_to_know.get('title', '')),
+            'description': clean_str(get_to_know.get('description', ''))[:500],  # Limit length
+            'specialties': [clean_str(s) for s in get_to_know.get('specialties', [])],
+            'businessName': clean_str(display_user.get('businessName', '')),
+            'businessAddress': clean_str(full_address.strip(', ')),
+            'pronouns': clean_str(display_user.get('cpdUserPronouns', '')),
+            'websiteUrl': clean_str(get_to_know.get('websiteUrl', '')),
+            'facebookUrl': clean_str(get_to_know.get('facebookUrl', '')),
+            'linkedInUrl': clean_str(get_to_know.get('linkedInUrl', ''))
         }
 
         print(f"  ✓ Got profile data: {email}, {cell_phone}, {sales_stats.get('countAllTime', 0)} total sales")
