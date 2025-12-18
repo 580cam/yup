@@ -734,11 +734,15 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
         def clean_str(s):
             if not s:
                 return ''
+            # Convert to string first
+            s = str(s)
+            # Remove newlines and tabs FIRST
+            s = s.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
             # Remove HTML
             import re
-            s = re.sub(r'<[^>]+>', '', str(s))
-            # Keep ONLY: letters, numbers, spaces, @ . , -
-            s = re.sub(r'[^a-zA-Z0-9\s@\.\,\-]', '', s)
+            s = re.sub(r'<[^>]+>', '', s)
+            # Keep ONLY: letters, numbers, spaces, @ . , - / ( )
+            s = re.sub(r'[^a-zA-Z0-9\s@\.\,\-\/\(\)]', '', s)
             # Single space normalization
             return ' '.join(s.split())
 
@@ -841,9 +845,12 @@ def enrich_realtor(lead):
     def clean_str(s):
         if not s:
             return ''
+        s = str(s)
+        # Remove newlines and tabs FIRST
+        s = s.replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
         import re
-        s = re.sub(r'<[^>]+>', '', str(s))
-        s = re.sub(r'[^a-zA-Z0-9\s@\.\,\-]', '', s)
+        s = re.sub(r'<[^>]+>', '', s)
+        s = re.sub(r'[^a-zA-Z0-9\s@\.\,\-\/\(\)]', '', s)
         return ' '.join(s.split())
 
     first_name = clean_str(lead.get('firstName', ''))
