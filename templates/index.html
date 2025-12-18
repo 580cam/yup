@@ -207,12 +207,14 @@
             </div>
 
             <div id="csv-tab" class="tab-content">
-                <label>Upload your CSV file</label>
+                <label>Upload your CSV file (100 leads max per batch)</label>
                 <input type="file" id="csv-file" accept=".csv">
                 <p style="font-size: 13px; color: #666; margin-top: 8px;">
-                    CSV should include: firstName, lastName (required), email, phone, city, state (optional)
+                    <strong>CSV must include:</strong> firstName, lastName, sales12Months<br>
+                    <strong>Optional:</strong> cityState (defaults to oklahoma-city-ok)<br>
+                    <strong>Recommended:</strong> Process in batches of 100 leads to avoid timeout
                 </p>
-                <button class="primary" onclick="uploadCSV()">Enrich Leads</button>
+                <button class="primary" onclick="uploadCSV()">Enrich with Zillow</button>
             </div>
         </div>
 

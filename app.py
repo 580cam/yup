@@ -157,16 +157,27 @@ def scrape():
 
         elif mode == 'csv':
             leads = data.get('leads', [])
-            for lead in leads:
-                if lead.get('firstName') and lead.get('lastName'):
-                    try:
-                        enriched = enrich_realtor(lead)
-                        json_str = json.dumps(enriched, ensure_ascii=True, separators=(',', ':'))
-                        yield f"data: {json_str}\n\n"
-                        time.sleep(0.5)
-                    except Exception as e:
-                        print(f"Error encoding lead: {e}")
-                        continue
+            print(f"Processing {len(leads)} leads from CSV for Zillow enrichment...")
+
+            for i, lead in enumerate(leads):
+                if not lead.get('firstName') or not lead.get('lastName'):
+                    continue
+
+                try:
+                    print(f"")
+                    print(f"========================================")
+                    print(f"ENRICHING CSV LEAD {i+1}/{len(leads)}")
+                    print(f"========================================")
+
+                    # CSV mode: ONLY Zillow enrichment (they already have realtor.com data)
+                    enriched = enrich_csv_lead_with_zillow(lead)
+
+                    json_str = json.dumps(enriched, ensure_ascii=True, separators=(',', ':'))
+                    yield f"data: {json_str}\n\n"
+
+                except Exception as e:
+                    print(f"Error encoding lead: {e}")
+                    continue
 
         yield 'data: {"done":true}\n\n'
 
@@ -800,6 +811,57 @@ def enrich_realtor_basic(lead):
         'zillowUrl': '',
         'socialMedia': {}
     }
+
+def enrich_csv_lead_with_zillow(lead):
+    """For CSV upload: Add Zillow data to existing realtor.com data"""
+
+    first_name = lead.get('firstName', '')
+    last_name = lead.get('lastName', '')
+
+    # Get city/state - CSV should have this or we default to Oklahoma City
+    city_state = lead.get('cityState', 'oklahoma-city-ok')
+
+    # Get realtor.com 12mo sales from CSV for verification
+    realtor_12mo = int(lead.get('sales12Months', 0))
+
+    print(f"Enriching: {first_name} {last_name}")
+
+    # Do Zillow enrichment with Human Journey
+    zillow_data = enrich_with_zillow(first_name, last_name, city_state, realtor_12mo)
+
+    if zillow_data:
+        # Merge CSV data with Zillow data
+        return {
+            **lead,  # Keep all original CSV data
+            'email': zillow_data.get('email', lead.get('email', '')),
+            'phone': zillow_data.get('phone', lead.get('phone', '')),
+            'brokeragePhone': zillow_data.get('brokeragePhone', ''),
+            'yearsExperience': f"{zillow_data.get('yearsExperience', 0)} years" if zillow_data.get('yearsExperience') else lead.get('yearsExperience', 'Unknown'),
+            'totalSales': zillow_data.get('totalSalesAllTime', lead.get('totalSales', 0)),
+            'reviewCount': zillow_data.get('reviewCount', 0),
+            'title': zillow_data.get('title', ''),
+            'description': zillow_data.get('description', ''),
+            'specialties': zillow_data.get('specialties', []),
+            'serviceAreas': zillow_data.get('serviceAreas', []),
+            'businessName': zillow_data.get('businessName', ''),
+            'businessAddress': zillow_data.get('businessAddress', ''),
+            'pronouns': zillow_data.get('pronouns', ''),
+            'websiteUrl': zillow_data.get('websiteUrl', ''),
+            'latestSaleAddress': zillow_data.get('latestSaleAddress', ''),
+            'latestSaleDate': zillow_data.get('latestSaleDate', ''),
+            'zillowUrl': zillow_data.get('zillowUrl', ''),
+            'socialMedia': {
+                'facebook': zillow_data.get('facebookUrl', ''),
+                'linkedin': zillow_data.get('linkedInUrl', ''),
+                'instagram': '',
+                'twitter': '',
+                'youtube': '',
+                'tiktok': ''
+            }
+        }
+    else:
+        # Return original CSV data unchanged
+        return lead
 
 def enrich_realtor(lead):
     """Enrich realtor data with Zillow info"""
