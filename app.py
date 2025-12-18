@@ -892,18 +892,18 @@ def enrich_realtor(lead):
             'businessName': clean_str(zillow_data.get('businessName', '')),
             'businessAddress': clean_str(zillow_data.get('businessAddress', '')),
             'pronouns': clean_str(zillow_data.get('pronouns', '')),
-            'websiteUrl': clean_str(zillow_data.get('websiteUrl', '')),
+            'websiteUrl': zillow_data.get('websiteUrl', ''),  # Don't clean URLs!
             'latestSaleAddress': clean_str(zillow_data.get('latestSaleAddress', '')),
-            'latestSaleDate': clean_str(zillow_data.get('latestSaleDate', '')),
+            'latestSaleDate': zillow_data.get('latestSaleDate', ''),  # Don't clean dates!
             'recentSales': [],
             'areasWorked': [],
             'avgHomeValue': avg_value,
             'awards': [],
-            'profileUrl': clean_str(lead.get('profileUrl', '')),
-            'zillowUrl': clean_str(zillow_data.get('zillowUrl', '')),
+            'profileUrl': lead.get('profileUrl', ''),  # Don't clean URLs!
+            'zillowUrl': zillow_data.get('zillowUrl', ''),  # Don't clean URLs!
             'socialMedia': {
-                'facebook': clean_str(zillow_data.get('facebookUrl', '')),
-                'linkedin': clean_str(zillow_data.get('linkedInUrl', '')),
+                'facebook': zillow_data.get('facebookUrl', ''),  # Don't clean URLs!
+                'linkedin': zillow_data.get('linkedInUrl', ''),  # Don't clean URLs!
                 'instagram': '',
                 'twitter': '',
                 'youtube': '',
