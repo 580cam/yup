@@ -682,6 +682,7 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
         sales_stats = props.get('agentSalesStats', {})
         get_to_know = props.get('getToKnowMe', {})
         past_sales = props.get('pastSales', {})
+        service_areas = props.get('serviceAreas', [])
 
         email = display_user.get('email', '')
         phone_numbers = display_user.get('phoneNumbers', {})
@@ -689,6 +690,10 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
         brokerage_phone = phone_numbers.get('brokerage', '')
         business_address = display_user.get('businessAddress', {})
         full_address = f"{business_address.get('address1', '')}, {business_address.get('city', '')}, {business_address.get('state', '')} {business_address.get('postalCode', '')}"
+
+        # Get review count
+        ratings = display_user.get('ratings', {})
+        review_count = ratings.get('count', 0)
 
         # Ultra aggressive string cleaning for JSON safety
         def clean_str(s):
@@ -701,6 +706,9 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
             s = re.sub(r'[^a-zA-Z0-9\s@\.\,\-]', '', s)
             # Single space normalization
             return ' '.join(s.split())
+
+        # Get service areas
+        areas = [clean_str(area.get('text', '')) for area in service_areas]
 
         # Get latest sale
         latest_sale_address = ''
@@ -717,9 +725,11 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
             'brokeragePhone': clean_str(brokerage_phone),
             'totalSalesAllTime': sales_stats.get('countAllTime', 0),
             'yearsExperience': get_to_know.get('yearsInIndustry', 0),
+            'reviewCount': review_count,
             'title': clean_str(get_to_know.get('title', '')),
             'description': clean_str(get_to_know.get('description', '')),
             'specialties': [clean_str(s) for s in get_to_know.get('specialties', [])],
+            'serviceAreas': areas,
             'businessName': clean_str(display_user.get('businessName', '')),
             'businessAddress': clean_str(full_address.strip(', ')),
             'pronouns': clean_str(display_user.get('cpdUserPronouns', '')),
@@ -757,13 +767,24 @@ def enrich_realtor_basic(lead):
         'lastName': clean_str(lead.get('lastName', '')),
         'email': '',
         'phone': '',
+        'brokeragePhone': '',
         'yearsExperience': 'Unknown',
         'totalSales': int(lead.get('totalSales', 0)),
         'sales12Months': int(lead.get('sales12Months', 0)),
+        'reviewCount': 0,
+        'title': '',
+        'description': '',
+        'specialties': [],
+        'serviceAreas': [],
+        'businessName': '',
+        'businessAddress': '',
+        'pronouns': '',
+        'websiteUrl': '',
+        'latestSaleAddress': '',
+        'latestSaleDate': '',
         'recentSales': [],
         'areasWorked': [],
         'avgHomeValue': avg_value,
-        'specializations': [],
         'awards': [],
         'profileUrl': clean_str(lead.get('profileUrl', '')),
         'zillowUrl': '',
@@ -806,6 +827,9 @@ def enrich_realtor(lead):
         specialties = zillow_data.get('specialties', [])
         clean_specialties = [clean_str(s) for s in specialties] if isinstance(specialties, list) else []
 
+        service_areas_list = zillow_data.get('serviceAreas', [])
+        clean_areas = [clean_str(a) for a in service_areas_list] if isinstance(service_areas_list, list) else []
+
         result = {
             'firstName': first_name,
             'lastName': last_name,
@@ -815,9 +839,11 @@ def enrich_realtor(lead):
             'yearsExperience': f"{zillow_data.get('yearsExperience', 0)} years" if zillow_data.get('yearsExperience') else 'Unknown',
             'totalSales': int(zillow_data.get('totalSalesAllTime', 0) or 0),
             'sales12Months': int(zillow_data.get('sales12Months', 0) or 0),
+            'reviewCount': int(zillow_data.get('reviewCount', 0) or 0),
             'title': clean_str(zillow_data.get('title', '')),
             'description': clean_str(zillow_data.get('description', '')),
             'specialties': clean_specialties,
+            'serviceAreas': clean_areas,
             'businessName': clean_str(zillow_data.get('businessName', '')),
             'businessAddress': clean_str(zillow_data.get('businessAddress', '')),
             'pronouns': clean_str(zillow_data.get('pronouns', '')),
@@ -850,9 +876,11 @@ def enrich_realtor(lead):
             'yearsExperience': 'Unknown',
             'totalSales': int(lead.get('totalSales', 0)),
             'sales12Months': int(lead.get('sales12Months', 0)),
+            'reviewCount': 0,
             'title': '',
             'description': '',
             'specialties': [],
+            'serviceAreas': [],
             'businessName': '',
             'businessAddress': '',
             'pronouns': '',
@@ -877,8 +905,8 @@ def export_csv():
     output = io.StringIO()
     if results:
         fieldnames = ['firstName', 'lastName', 'email', 'phone', 'brokeragePhone',
-                     'yearsExperience', 'totalSales', 'sales12Months', 'title', 'description',
-                     'specialties', 'businessName', 'businessAddress', 'pronouns', 'websiteUrl',
+                     'yearsExperience', 'totalSales', 'sales12Months', 'reviewCount', 'title', 'description',
+                     'specialties', 'serviceAreas', 'businessName', 'businessAddress', 'pronouns', 'websiteUrl',
                      'latestSaleAddress', 'latestSaleDate', 'avgHomeValue', 'profileUrl', 'zillowUrl',
                      'facebook', 'linkedin', 'instagram', 'twitter', 'youtube', 'tiktok']
         writer = csv.DictWriter(output, fieldnames=fieldnames)
@@ -894,9 +922,11 @@ def export_csv():
                 'yearsExperience': result.get('yearsExperience', ''),
                 'totalSales': result.get('totalSales', 0),
                 'sales12Months': result.get('sales12Months', 0),
+                'reviewCount': result.get('reviewCount', 0),
                 'title': result.get('title', ''),
                 'description': result.get('description', '').replace('\n', ' ').strip(),
                 'specialties': '; '.join(result.get('specialties', [])),
+                'serviceAreas': '; '.join(result.get('serviceAreas', [])),
                 'businessName': result.get('businessName', ''),
                 'businessAddress': result.get('businessAddress', ''),
                 'pronouns': result.get('pronouns', ''),
