@@ -576,21 +576,28 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
             print(f"No Zillow name match for '{full_name_realtor}'")
             return None
 
-        # Try to find match within 10 sales
+        # Check ALL matches to find best one
+        print(f"  Checking {len(name_matches)} name matches:")
         best_match = None
-        for match in name_matches:
+        best_diff = float('inf')
+
+        for i, match in enumerate(name_matches):
             sales_diff = abs(match['zillow_12mo'] - realtor_12mo_sales)
-            print(f"  '{match['name']}': Zillow 12mo={match['zillow_12mo']}, Realtor 12mo={realtor_12mo_sales}, diff={sales_diff}")
+            print(f"    [{i+1}] '{match['name']}': Zillow 12mo={match['zillow_12mo']}, Realtor 12mo={realtor_12mo_sales}, diff={sales_diff}")
 
-            if sales_diff <= 10:
+            # Find closest match
+            if sales_diff < best_diff:
+                best_diff = sales_diff
                 best_match = match['card']
-                print(f"  ✓ VERIFIED MATCH (sales within 10)")
-                break
 
-        # If no match within 10, use first result
-        if not best_match:
-            best_match = name_matches[0]['card']
-            print(f"  Using first match (no sales match within 10)")
+                if sales_diff <= 10:
+                    print(f"    ✓ VERIFIED MATCH (within 10)")
+                    break
+
+        if best_diff <= 10:
+            print(f"  Using verified match (diff={best_diff})")
+        else:
+            print(f"  Using closest match (diff={best_diff}, no perfect match found)")
 
         # Extract profile data from matched card
         profile_data = best_match.get('profileData', [])
@@ -802,11 +809,14 @@ def enrich_realtor(lead):
         avg = (combined['min'] + combined['max']) / 2
         avg_value = f"${int(avg):,}"
 
-    # Clean strings
+    # Use SAME ultra clean as profile scraping
     def clean_str(s):
         if not s:
             return ''
-        return str(s).replace('"', "'").replace('\n', ' ').replace('\r', ' ').strip()
+        import re
+        s = re.sub(r'<[^>]+>', '', str(s))
+        s = re.sub(r'[^a-zA-Z0-9\s@\.\,\-]', '', s)
+        return ' '.join(s.split())
 
     first_name = clean_str(lead.get('firstName', ''))
     last_name = clean_str(lead.get('lastName', ''))
