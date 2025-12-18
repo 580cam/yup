@@ -5,11 +5,10 @@ import csv
 import io
 import time
 import re
+import uuid
 from datetime import datetime
 from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
-
-zillow_session = curl_requests.Session()
 
 app = Flask(__name__)
 
@@ -51,13 +50,33 @@ import random
 def get_random_ua():
     return random.choice(USER_AGENTS)
 
-# ProxyJet credentials - ROTATING (no session ID = new IP each request)
-PROXY_USERNAME = "251216vin3B-resi-US"  # Rotating!
+# ProxyJet credentials
+PROXY_USERNAME_BASE = "251216vin3B-resi-US"
 PROXY_PASSWORD = "Ib4MCO7Q8YIsylv"
 PROXY_SERVER = "proxy-jet.io:1010"
-PROXY_URL = f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_SERVER}"
 
-print(f"Using ProxyJet rotating proxies")
+def get_sticky_proxy_url(session_id):
+    """Get sticky proxy URL - same IP for entire journey"""
+    username = f"{PROXY_USERNAME_BASE}-ip-{session_id}"
+    return f"http://{username}:{PROXY_PASSWORD}@{PROXY_SERVER}"
+
+# Chrome 120 headers - matches TLS impersonation
+CHROME_120_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'sec-ch-ua': '"Not_A Brand";v="99", "Chromium";v="120"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'sec-fetch-dest': 'document',
+    'sec-fetch-mode': 'navigate',
+    'sec-fetch-site': 'none',
+    'sec-fetch-user': '?1',
+    'upgrade-insecure-requests': '1'
+}
+
+print(f"Using ProxyJet rotating proxies with sticky sessions")
 
 GRAPHQL_URL = "https://www.realtor.com/frontdoor/graphql"
 HEADERS = {
@@ -446,60 +465,63 @@ def init_zillow_session():
         traceback.print_exc()
 
 def enrich_with_zillow(first_name, last_name, city_state):
-    """Search Zillow for agent and extract email, phone, total sales"""
+    """Human Journey: Homepage → Search → Profile with sticky session"""
     try:
-        # Combine full name from realtor.com
-        full_name_realtor = f"{first_name} {last_name}".strip()
+        # Generate unique session ID for this agent (sticky IP)
+        run_session_id = str(uuid.uuid4())[:8]
+        sticky_proxy_url = get_sticky_proxy_url(run_session_id)
+        proxies = {'http': sticky_proxy_url, 'https': sticky_proxy_url}
 
-        # URL encode the names
-        from urllib.parse import quote_plus
-        name_query = quote_plus(full_name_realtor)
+        print(f"Starting Human Journey for {first_name} {last_name} (session: {run_session_id})")
 
-        search_url = f"https://www.zillow.com/professionals/real-estate-agent-reviews/{city_state.lower().replace(' ', '-')}/?name={name_query}"
+        # Create ONE session for entire journey
+        session = curl_requests.Session()
 
-        print(f"Searching Zillow for: {full_name_realtor}")
-
-        # Zillow-specific headers with ROTATING user agent
-        zillow_headers = {
-            'User-Agent': get_random_ua(),  # New UA each request!
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Referer': f'https://www.zillow.com/professionals/real-estate-agent-reviews/{city_state.lower().replace(" ", "-")}/',
-            'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="143"',
-            'sec-ch-ua-mobile': '?0',
-            'sec-ch-ua-platform': '"Windows"',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'same-origin',
-            'sec-fetch-user': '?1',
-            'upgrade-insecure-requests': '1'
-        }
-
-        # Random delay before each Zillow request (5-10 seconds, look human)
-        delay = random.uniform(5.0, 10.0)
-        print(f"  Waiting {delay:.1f}s before request...")
-        time.sleep(delay)
-
-        # Fresh session for EACH request - new IP, new UA, new cookies
-        fresh_session = curl_requests.Session()
-        proxies = {'http': PROXY_URL, 'https': PROXY_URL}
-
-        response = fresh_session.get(
-            search_url,
-            headers=zillow_headers,
+        # STEP 1: Visit homepage (lander) to get cookies
+        print(f"  Step 1: Landing on homepage...")
+        home_response = session.get(
+            'https://www.zillow.com/',
+            headers=CHROME_120_HEADERS.copy(),
             impersonate="chrome120",
             proxies=proxies,
             timeout=20
         )
 
-        if response.status_code != 200:
-            print(f"Zillow search returned status {response.status_code}")
+        if home_response.status_code != 200:
+            print(f"  Homepage failed: {home_response.status_code}, aborting")
+            session.close()
             return None
 
-        print(f"Zillow search success! Status 200")
+        print(f"  ✓ Homepage cookies collected")
+        time.sleep(random.uniform(3.0, 5.0))  # Look like browsing
 
-        soup = BeautifulSoup(response.content, 'html.parser')
+        # STEP 2: Search for agent
+        full_name_realtor = f"{first_name} {last_name}".strip()
+        from urllib.parse import quote_plus
+        name_query = quote_plus(full_name_realtor)
+        search_url = f"https://www.zillow.com/professionals/real-estate-agent-reviews/{city_state.lower().replace(' ', '-')}/?name={name_query}"
+
+        print(f"  Step 2: Searching for {full_name_realtor}...")
+
+        search_headers = CHROME_120_HEADERS.copy()
+        search_headers['Referer'] = 'https://www.zillow.com/'
+
+        search_response = session.get(
+            search_url,
+            headers=search_headers,
+            impersonate="chrome120",
+            proxies=proxies,
+            timeout=20
+        )
+
+        if search_response.status_code != 200:
+            print(f"  Search failed: {search_response.status_code}, aborting")
+            session.close()
+            return None
+
+        print(f"  ✓ Search success! Status 200")
+
+        soup = BeautifulSoup(search_response.content, 'html.parser')
 
         # Find __NEXT_DATA__ script tag with JSON
         script_tag = soup.find('script', {'id': '__NEXT_DATA__'})
@@ -564,13 +586,16 @@ def enrich_with_zillow(first_name, last_name, city_state):
                 sales_last_12mo = int(data_val)
                 print(f"  12mo sales: {sales_last_12mo}")
 
-        # Wait 5-10 seconds before visiting profile (look like we're reading results)
-        delay = random.uniform(5.0, 10.0)
-        print(f"  Waiting {delay:.1f}s before profile visit...")
+        # STEP 3: Visit profile page
+        delay = random.uniform(8.0, 15.0)
+        print(f"  Step 3: Waiting {delay:.1f}s before clicking profile...")
         time.sleep(delay)
 
-        # Now scrape the actual profile page for full details
-        profile_data = scrape_zillow_profile(zillow_url)
+        # Scrape profile using SAME session
+        profile_data = scrape_zillow_profile_journey(session, zillow_url, search_url, proxies)
+
+        # Close session
+        session.close()
 
         if profile_data:
             return {
@@ -586,28 +611,21 @@ def enrich_with_zillow(first_name, last_name, city_state):
             'sales12Months': sales_last_12mo
         }
     except Exception as e:
-        print(f"Error enriching with Zillow for {first_name} {last_name}: {e}")
+        print(f"Error in Human Journey for {first_name} {last_name}: {e}")
         import traceback
         traceback.print_exc()
         return None
 
-def scrape_zillow_profile(profile_url):
-    """Scrape detailed info from Zillow profile page"""
+def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
+    """STEP 3: Visit profile page with same session"""
     try:
-        print(f"  Scraping profile: {profile_url}")
+        print(f"  Visiting profile: {profile_url}")
 
-        # Fresh session for profile - NEW IP, NEW UA, NEW cookies
-        fresh_session = curl_requests.Session()
-        proxies = {'http': PROXY_URL, 'https': PROXY_URL}
+        # Use SAME session with cookies from homepage + search
+        profile_headers = CHROME_120_HEADERS.copy()
+        profile_headers['Referer'] = search_url  # Came from search results!
 
-        # Rotating UA
-        profile_headers = {
-            'User-Agent': get_random_ua(),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Referer': 'https://www.zillow.com/professionals/real-estate-agent-reviews/'
-        }
-
-        response = fresh_session.get(
+        response = session.get(
             profile_url,
             headers=profile_headers,
             impersonate="chrome120",
@@ -619,7 +637,7 @@ def scrape_zillow_profile(profile_url):
             print(f"  Profile returned status {response.status_code}")
             return None
 
-        print(f"  Profile success! Status 200")
+        print(f"  ✓ Profile success! Status 200")
 
         soup = BeautifulSoup(response.content, 'html.parser')
 
