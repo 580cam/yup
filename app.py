@@ -546,9 +546,12 @@ def enrich_with_zillow(first_name, last_name, city_state):
             # Normalize multiple spaces to single space
             return ' '.join(cleaned.lower().split())
 
-        # Find matching agent - bidirectional phrase match
+        # Find matching agent with sales verification
         best_match = None
         realtor_clean = clean_for_match(full_name_realtor)
+
+        # Get realtor.com 12mo sales for comparison (from lead data passed earlier)
+        # We'll pass this in from the caller
 
         for card in results:
             if card.get('__typename') == 'AgentDirectoryFinderProfileResultsCard':
@@ -557,12 +560,23 @@ def enrich_with_zillow(first_name, last_name, city_state):
 
                 # Bidirectional match: does realtor contain zillow OR zillow contain realtor
                 if realtor_clean in zillow_clean or zillow_clean in realtor_clean:
+                    # Extract Zillow 12mo sales to verify
+                    profile_data = card.get('profileData', [])
+                    zillow_12mo = 0
+                    for item in profile_data:
+                        if 'sales last 12 months' in item.get('label', '').lower():
+                            zillow_12mo = int(item.get('data') or 0)
+                            break
+
+                    print(f"NAME MATCH: '{card_name}' ≈ '{full_name_realtor}'")
+                    print(f"  Zillow 12mo sales: {zillow_12mo}")
+
+                    # For now, take first name match (we'll add sales verification after)
                     best_match = card
-                    print(f"MATCH FOUND: '{card_name}' ≈ '{full_name_realtor}' (cleaned: '{zillow_clean}' ≈ '{realtor_clean}')")
-                    break  # Take first match
+                    break
 
         if not best_match:
-            print(f"No Zillow match for '{full_name_realtor}' (cleaned: '{realtor_clean}')")
+            print(f"No Zillow match for '{full_name_realtor}'")
             return None
 
         # Extract profile data from matched card
@@ -663,20 +677,17 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
         business_address = display_user.get('businessAddress', {})
         full_address = f"{business_address.get('address1', '')}, {business_address.get('city', '')}, {business_address.get('state', '')} {business_address.get('postalCode', '')}"
 
-        # Clean all strings to prevent JSON errors
+        # Ultra aggressive string cleaning for JSON safety
         def clean_str(s):
             if not s:
                 return ''
-            # Remove HTML tags
+            # Remove HTML
             import re
             s = re.sub(r'<[^>]+>', '', str(s))
-            # Replace ALL problematic chars
-            s = s.replace('\\', '').replace('"', '').replace("'", '').replace('\n', ' ').replace('\r', ' ').replace('\t', ' ')
-            # Only keep alphanumeric, spaces, basic punctuation
-            s = re.sub(r'[^\w\s\.,!?@\-\(\)\/]', '', s)
-            # Remove any control characters
-            s = ''.join(char for char in s if ord(char) >= 32)
-            return ' '.join(s.split())  # Normalize whitespace
+            # Keep ONLY: letters, numbers, spaces, @ . , -
+            s = re.sub(r'[^a-zA-Z0-9\s@\.\,\-]', '', s)
+            # Single space normalization
+            return ' '.join(s.split())
 
         # Get latest sale
         latest_sale_address = ''
