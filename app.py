@@ -546,118 +546,90 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
             # Normalize multiple spaces to single space
             return ' '.join(cleaned.lower().split())
 
-        # Find matching agent with sales verification
+        # ONE LOOP: Collect both exact and fuzzy matches
         realtor_clean = clean_for_match(full_name_realtor)
         print(f"  Looking for: '{realtor_clean}'")
-        name_matches = []
 
-        # FIRST: Try old method (exact substring match)
-        for i, card in enumerate(results):
-            if card.get('__typename') == 'AgentDirectoryFinderProfileResultsCard':
-                card_name = card.get('cardTitle', '')
-                zillow_clean = clean_for_match(card_name)
+        exact_matches = []
+        fuzzy_matches = []
 
-                # Old method: bidirectional substring
-                if realtor_clean in zillow_clean or zillow_clean in realtor_clean:
-                    # Extract Zillow 12mo sales
-                    profile_data_temp = card.get('profileData', [])
-                    zillow_12mo = 0
-                    for item in profile_data_temp:
-                        if 'sales last 12 months' in item.get('label', '').lower():
-                            zillow_12mo = int(item.get('data') or 0)
-                            break
+        realtor_words = realtor_clean.split()
+        realtor_first = realtor_words[0] if realtor_words else ''
+        realtor_last = realtor_words[-1] if realtor_words else ''
 
-                    print(f"  Found EXACT match: '{card_name}' with {zillow_12mo} sales")
+        # Single loop through all results
+        for card in results:
+            if card.get('__typename') != 'AgentDirectoryFinderProfileResultsCard':
+                continue
 
-                    name_matches.append({
-                        'card': card,
-                        'name': card_name,
-                        'zillow_12mo': zillow_12mo
-                    })
+            card_name = card.get('cardTitle', '')
+            zillow_clean = clean_for_match(card_name)
 
-        # Check if any exact matches have sales within 10
-        has_good_match = False
-        if name_matches:
-            for match in name_matches:
-                if abs(match['zillow_12mo'] - realtor_12mo_sales) <= 10:
-                    has_good_match = True
+            # Extract sales
+            profile_data_temp = card.get('profileData', [])
+            zillow_12mo = 0
+            for item in profile_data_temp:
+                if 'sales last 12 months' in item.get('label', '').lower():
+                    zillow_12mo = int(item.get('data') or 0)
                     break
 
-        # SECOND: If no exact matches OR no good sales match, try fuzzy
-        if not name_matches or not has_good_match:
-            if name_matches:
-                print(f"  Exact matches found but sales don't match (diff > 10), trying fuzzy...")
+            # Check EXACT match (bidirectional substring)
+            if realtor_clean in zillow_clean or zillow_clean in realtor_clean:
+                print(f"  EXACT: '{card_name}' - {zillow_12mo} sales")
+                exact_matches.append({'card': card, 'name': card_name, 'zillow_12mo': zillow_12mo})
+
+            # Also check FUZZY match (first 3 letters + last name)
             else:
-                print(f"  No exact matches, trying fuzzy matching...")
+                zillow_words = zillow_clean.split()
+                zillow_first = zillow_words[0] if zillow_words else ''
+                zillow_last = zillow_words[-1] if zillow_words else ''
 
-            for i, card in enumerate(results):
-                if card.get('__typename') == 'AgentDirectoryFinderProfileResultsCard':
-                    card_name = card.get('cardTitle', '')
-                    zillow_clean = clean_for_match(card_name)
+                if (realtor_last == zillow_last and
+                    len(realtor_first) >= 3 and len(zillow_first) >= 3 and
+                    (realtor_first[:3] == zillow_first[:3])):
+                    print(f"  FUZZY: '{card_name}' - {zillow_12mo} sales")
+                    fuzzy_matches.append({'card': card, 'name': card_name, 'zillow_12mo': zillow_12mo})
 
-                    realtor_words = realtor_clean.split()
-                    zillow_words = zillow_clean.split()
+        # DECISION TREE:
+        # 1. Try exact matches with sales within 10
+        # 2. Try fuzzy matches with sales within 10
+        # 3. Use first exact match
+        # 4. Give up
 
-                    match = False
-                    if len(realtor_words) >= 1 and len(zillow_words) >= 1:
-                        realtor_last = realtor_words[-1]
-                        zillow_last = zillow_words[-1]
-                        realtor_first = realtor_words[0]
-                        zillow_first = zillow_words[0]
+        best_match = None
 
-                        # Last name matches AND first 3 letters match
-                        if realtor_last == zillow_last:
-                            if (realtor_first.startswith(zillow_first[:3]) or
-                                zillow_first.startswith(realtor_first[:3])):
-                                match = True
+        # Check exact matches first
+        for match in exact_matches:
+            if abs(match['zillow_12mo'] - realtor_12mo_sales) <= 10:
+                best_match = match
+                print(f"  ✓ Using EXACT match with verified sales: {match['name']} (diff={abs(match['zillow_12mo'] - realtor_12mo_sales)})")
+                break
 
-                    if match:
-                        # Extract Zillow 12mo sales
-                        profile_data_temp = card.get('profileData', [])
-                        zillow_12mo = 0
-                        for item in profile_data_temp:
-                            if 'sales last 12 months' in item.get('label', '').lower():
-                                zillow_12mo = int(item.get('data') or 0)
-                                break
+        # If no good exact, try fuzzy
+        if not best_match:
+            for match in fuzzy_matches:
+                if abs(match['zillow_12mo'] - realtor_12mo_sales) <= 10:
+                    best_match = match
+                    print(f"  ✓ Using FUZZY match with verified sales: {match['name']} (diff={abs(match['zillow_12mo'] - realtor_12mo_sales)})")
+                    break
 
-                        print(f"  Found FUZZY match: '{card_name}' with {zillow_12mo} sales")
+        # Fallback to first exact
+        if not best_match and exact_matches:
+            best_match = exact_matches[0]
+            print(f"  Using first EXACT match (no sales match): {best_match['name']}")
 
-                        name_matches.append({
-                            'card': card,
-                            'name': card_name,
-                            'zillow_12mo': zillow_12mo
-                        })
+        if not best_match and fuzzy_matches:
+            best_match = fuzzy_matches[0]
+            print(f"  Using first FUZZY match (no sales match): {best_match['name']}")
 
-        if not name_matches:
-            print(f"No Zillow name match for '{full_name_realtor}'")
+        if not best_match:
+            print(f"No matches found for '{full_name_realtor}'")
             return None
 
-        # Check ALL matches to find best one
-        print(f"  Checking {len(name_matches)} name matches:")
-        best_match = None
-        best_diff = float('inf')
-
-        for i, match in enumerate(name_matches):
-            sales_diff = abs(match['zillow_12mo'] - realtor_12mo_sales)
-            print(f"    [{i+1}] '{match['name']}': Zillow 12mo={match['zillow_12mo']}, Realtor 12mo={realtor_12mo_sales}, diff={sales_diff}")
-
-            # Find closest match
-            if sales_diff < best_diff:
-                best_diff = sales_diff
-                best_match = match['card']
-
-                if sales_diff <= 10:
-                    print(f"    ✓ VERIFIED MATCH (within 10)")
-                    break
-
-        if best_diff <= 10:
-            print(f"  Using verified match (diff={best_diff})")
-        else:
-            print(f"  Using closest match (diff={best_diff}, no perfect match found)")
-
         # Extract profile data from matched card
-        profile_data = best_match.get('profileData', [])
-        zillow_url = best_match.get('cardActionLink', '')
+        matched_card = best_match['card']
+        profile_data = matched_card.get('profileData', [])
+        zillow_url = matched_card.get('cardActionLink', '')
 
         print(f"Zillow URL: {zillow_url}")
 
