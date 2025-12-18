@@ -51,11 +51,19 @@ import random
 def get_random_ua():
     return random.choice(USER_AGENTS)
 
-# ProxyJet credentials
-PROXY_USERNAME = "251216vin3B-resi-US"  # rotating residential US
+# ProxyJet credentials with sticky session
+import hashlib
+session_id = hashlib.md5(str(time.time()).encode()).hexdigest()[:8]  # Unique per scrape session
+PROXY_USERNAME = f"251216vin3B-resi-US-ip-{session_id}"  # Sticky session - same IP for all requests!
 PROXY_PASSWORD = "Ib4MCO7Q8YIsylv"
 PROXY_SERVER = "proxy-jet.io:1010"
 PROXY_URL = f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@{PROXY_SERVER}"
+
+# Pick ONE user agent for entire session (like a real browser)
+SESSION_UA = get_random_ua()
+
+print(f"Using ProxyJet session: {session_id}")
+print(f"Using UA: {SESSION_UA[:50]}...")
 
 GRAPHQL_URL = "https://www.realtor.com/frontdoor/graphql"
 HEADERS = {
@@ -461,9 +469,9 @@ def enrich_with_zillow(first_name, last_name, city_state):
 
         print(f"Searching Zillow for: {full_name_realtor}")
 
-        # Zillow-specific headers with rotating user agent
+        # Zillow-specific headers with SAME user agent for session
         zillow_headers = {
-            'User-Agent': get_random_ua(),  # Rotate user agent each request
+            'User-Agent': SESSION_UA,  # Keep same UA for entire session!
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
@@ -597,12 +605,19 @@ def scrape_zillow_profile(profile_url):
     try:
         print(f"  Scraping profile: {profile_url}")
 
-        # Use curl-cffi with ProxyJet proxy
+        # Use curl-cffi with ProxyJet proxy (same session!)
         proxies = {'http': PROXY_URL, 'https': PROXY_URL}
+
+        # Same UA as rest of session
+        profile_headers = {
+            'User-Agent': SESSION_UA,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Referer': 'https://www.zillow.com/professionals/real-estate-agent-reviews/'
+        }
 
         response = zillow_session.get(
             profile_url,
-            headers=zillow_headers,
+            headers=profile_headers,
             impersonate="chrome120",
             proxies=proxies,
             timeout=20
