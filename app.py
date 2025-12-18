@@ -551,37 +551,14 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
         print(f"  Looking for: '{realtor_clean}'")
         name_matches = []
 
-        # Collect all name matches
+        # FIRST: Try old method (exact substring match)
         for i, card in enumerate(results):
             if card.get('__typename') == 'AgentDirectoryFinderProfileResultsCard':
                 card_name = card.get('cardTitle', '')
                 zillow_clean = clean_for_match(card_name)
 
-                print(f"  Result [{i+1}]: '{card_name}' → cleaned: '{zillow_clean}'")
-
-                # Word matching: last name must match + first name starts match
-                realtor_words = realtor_clean.split()
-                zillow_words = zillow_clean.split()
-
-                # Match if:
-                # 1. Last word (last name) matches
-                # 2. First word starts the same OR vice versa
-                match = False
-                if len(realtor_words) >= 1 and len(zillow_words) >= 1:
-                    realtor_last = realtor_words[-1]
-                    zillow_last = zillow_words[-1]
-                    realtor_first = realtor_words[0]
-                    zillow_first = zillow_words[0]
-
-                    # Last name matches AND (first names start same OR one contains other)
-                    if realtor_last == zillow_last:
-                        if (realtor_first.startswith(zillow_first[:3]) or
-                            zillow_first.startswith(realtor_first[:3]) or
-                            realtor_first in zillow_first or
-                            zillow_first in realtor_first):
-                            match = True
-
-                if match:
+                # Old method: bidirectional substring
+                if realtor_clean in zillow_clean or zillow_clean in realtor_clean:
                     # Extract Zillow 12mo sales
                     profile_data_temp = card.get('profileData', [])
                     zillow_12mo = 0
@@ -590,13 +567,55 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
                             zillow_12mo = int(item.get('data') or 0)
                             break
 
-                    print(f"  Found name match: '{card_name}' with {zillow_12mo} sales last 12mo")
+                    print(f"  Found EXACT match: '{card_name}' with {zillow_12mo} sales")
 
                     name_matches.append({
                         'card': card,
                         'name': card_name,
                         'zillow_12mo': zillow_12mo
                     })
+
+        # SECOND: If no exact matches, try fuzzy (first 3 letters)
+        if not name_matches:
+            print(f"  No exact matches, trying fuzzy matching...")
+
+            for i, card in enumerate(results):
+                if card.get('__typename') == 'AgentDirectoryFinderProfileResultsCard':
+                    card_name = card.get('cardTitle', '')
+                    zillow_clean = clean_for_match(card_name)
+
+                    realtor_words = realtor_clean.split()
+                    zillow_words = zillow_clean.split()
+
+                    match = False
+                    if len(realtor_words) >= 1 and len(zillow_words) >= 1:
+                        realtor_last = realtor_words[-1]
+                        zillow_last = zillow_words[-1]
+                        realtor_first = realtor_words[0]
+                        zillow_first = zillow_words[0]
+
+                        # Last name matches AND first 3 letters match
+                        if realtor_last == zillow_last:
+                            if (realtor_first.startswith(zillow_first[:3]) or
+                                zillow_first.startswith(realtor_first[:3])):
+                                match = True
+
+                    if match:
+                        # Extract Zillow 12mo sales
+                        profile_data_temp = card.get('profileData', [])
+                        zillow_12mo = 0
+                        for item in profile_data_temp:
+                            if 'sales last 12 months' in item.get('label', '').lower():
+                                zillow_12mo = int(item.get('data') or 0)
+                                break
+
+                        print(f"  Found FUZZY match: '{card_name}' with {zillow_12mo} sales")
+
+                        name_matches.append({
+                            'card': card,
+                            'name': card_name,
+                            'zillow_12mo': zillow_12mo
+                        })
 
         if not name_matches:
             print(f"No Zillow name match for '{full_name_realtor}'")
