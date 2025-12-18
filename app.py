@@ -548,13 +548,16 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
 
         # Find matching agent with sales verification
         realtor_clean = clean_for_match(full_name_realtor)
+        print(f"  Looking for: '{realtor_clean}'")
         name_matches = []
 
         # Collect all name matches
-        for card in results:
+        for i, card in enumerate(results):
             if card.get('__typename') == 'AgentDirectoryFinderProfileResultsCard':
                 card_name = card.get('cardTitle', '')
                 zillow_clean = clean_for_match(card_name)
+
+                print(f"  Result [{i+1}]: '{card_name}' → cleaned: '{zillow_clean}'")
 
                 # Bidirectional match: does realtor contain zillow OR zillow contain realtor
                 if realtor_clean in zillow_clean or zillow_clean in realtor_clean:
