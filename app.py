@@ -60,18 +60,18 @@ def get_sticky_proxy_url(session_id):
     username = f"{PROXY_USERNAME_BASE}-ip-{session_id}"
     return f"http://{username}:{PROXY_PASSWORD}@{PROXY_SERVER}"
 
-# Chrome 120 headers - matches TLS impersonation
+# Chrome 120 headers - matches TLS impersonation with full stealth
 CHROME_120_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.9',
     'Accept-Encoding': 'gzip, deflate, br',
-    'sec-ch-ua': '"Not_A Brand";v="99", "Chromium";v="120"',
+    'sec-ch-ua': '"Not_A Brand";v="99", "Chromium";v="120", "Google Chrome";v="120"',
     'sec-ch-ua-mobile': '?0',
     'sec-ch-ua-platform': '"Windows"',
     'sec-fetch-dest': 'document',
     'sec-fetch-mode': 'navigate',
-    'sec-fetch-site': 'none',
+    'sec-fetch-site': 'same-origin',
     'sec-fetch-user': '?1',
     'upgrade-insecure-requests': '1'
 }
@@ -118,77 +118,42 @@ def scrape():
     print(f"Mode: {mode}")
 
     def generate():
-        """Stream results as they're fetched - in batches"""
+        """Stream results immediately - no batching"""
         if mode == 'area':
             areas = data.get('areas', [])
             for area in areas:
-                batch = []
                 enriched_count = 0
-                max_enrich = 10  # TEST: Increased to 10 to see pattern
+                max_enrich = 10  # TEST: 10 agents
                 total_agents = 0
 
-                # Stream agents in batches of 10 (smaller batches = more reliable)
+                # Stream agents immediately
                 for agent in stream_agents_from_area(area):
                     if agent is None:
-                        # Keepalive
                         yield ": keepalive\n\n"
                         continue
 
                     total_agents += 1
 
                     try:
-                        # Only enrich first 5 with Zillow (TEST MODE)
+                        # Only enrich first 10 with Zillow
                         if enriched_count < max_enrich:
-                            print(f"")
                             print(f"========================================")
                             print(f"ZILLOW ENRICHMENT #{enriched_count + 1} OF {max_enrich}")
                             print(f"========================================")
                             enriched = enrich_realtor(agent)
                             enriched_count += 1
                         else:
-                            # Skip Zillow enrichment for rest
                             if total_agents == max_enrich + 1:
-                                print(f"")
                                 print(f"*** STOPPING ZILLOW ENRICHMENT - REACHED {max_enrich} LIMIT ***")
-                                print(f"*** Remaining {5291 - max_enrich} agents will get basic data only ***")
-                                print(f"")
                             enriched = enrich_realtor_basic(agent)
 
-                        batch.append(enriched)
-
-                        # Send batch when we have 10
-                        if len(batch) >= 10:
-                            try:
-                                json_str = json.dumps({'batch': batch}, ensure_ascii=True, separators=(',', ':'))
-                                yield f"data: {json_str}\n\n"
-                                batch = []
-                            except Exception as je:
-                                print(f"JSON encoding error, sending one by one: {je}")
-                                # Fallback: send individually
-                                for item in batch:
-                                    try:
-                                        single_json = json.dumps(item, ensure_ascii=True, separators=(',', ':'))
-                                        yield f"data: {single_json}\n\n"
-                                    except:
-                                        pass
-                                batch = []
+                        # Yield immediately!
+                        json_str = json.dumps(enriched, ensure_ascii=True, separators=(',', ':'))
+                        yield f"data: {json_str}\n\n"
 
                     except Exception as e:
                         print(f"Error encoding agent: {e}")
                         continue
-
-                # Send remaining batch
-                if batch:
-                    try:
-                        json_str = json.dumps({'batch': batch}, ensure_ascii=True, separators=(',', ':'))
-                        yield f"data: {json_str}\n\n"
-                    except:
-                        for item in batch:
-                            try:
-                                single_json = json.dumps(item, ensure_ascii=True, separators=(',', ':'))
-                                yield f"data: {single_json}\n\n"
-                            except:
-                                pass
 
         elif mode == 'csv':
             leads = data.get('leads', [])
@@ -472,16 +437,22 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
         sticky_proxy_url = get_sticky_proxy_url(run_session_id)
         proxies = {'http': sticky_proxy_url, 'https': sticky_proxy_url}
 
+        # Random delay before starting (break patterns)
+        time.sleep(random.uniform(2.0, 4.0))
+
         print(f"Starting Human Journey for {first_name} {last_name} (session: {run_session_id})")
 
-        # Create ONE session for entire journey
+        # Create FRESH session for this agent
         session = curl_requests.Session()
 
         # STEP 1: Visit homepage (lander) to get cookies
         print(f"  Step 1: Landing on homepage...")
+        home_headers = CHROME_120_HEADERS.copy()
+        home_headers['sec-fetch-site'] = 'none'  # Direct navigation
+
         home_response = session.get(
             'https://www.zillow.com/',
-            headers=CHROME_120_HEADERS.copy(),
+            headers=home_headers,
             impersonate="chrome120",
             proxies=proxies,
             timeout=20
