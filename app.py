@@ -559,12 +559,14 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
                 # Bidirectional match: does realtor contain zillow OR zillow contain realtor
                 if realtor_clean in zillow_clean or zillow_clean in realtor_clean:
                     # Extract Zillow 12mo sales
-                    profile_data = card.get('profileData', [])
+                    profile_data_temp = card.get('profileData', [])
                     zillow_12mo = 0
-                    for item in profile_data:
+                    for item in profile_data_temp:
                         if 'sales last 12 months' in item.get('label', '').lower():
                             zillow_12mo = int(item.get('data') or 0)
                             break
+
+                    print(f"  Found name match: '{card_name}' with {zillow_12mo} sales last 12mo")
 
                     name_matches.append({
                         'card': card,
@@ -724,7 +726,7 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
         if past_sales_list and len(past_sales_list) > 0:
             latest = past_sales_list[0]
             latest_sale_address = clean_str(latest.get('street_address', ''))
-            latest_sale_date = clean_str(latest.get('sold_date', ''))
+            latest_sale_date = latest.get('sold_date', '')  # Don't clean date!
 
         result = {
             'email': clean_str(email),
@@ -740,11 +742,11 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
             'businessName': clean_str(display_user.get('businessName', '')),
             'businessAddress': clean_str(full_address.strip(', ')),
             'pronouns': clean_str(display_user.get('cpdUserPronouns', '')),
-            'websiteUrl': clean_str(get_to_know.get('websiteUrl', '')),
-            'facebookUrl': clean_str(get_to_know.get('facebookUrl', '')),
-            'linkedInUrl': clean_str(get_to_know.get('linkedInUrl', '')),
+            'websiteUrl': get_to_know.get('websiteUrl', ''),  # Don't clean URLs!
+            'facebookUrl': get_to_know.get('facebookUrl', ''),  # Don't clean URLs!
+            'linkedInUrl': get_to_know.get('linkedInUrl', ''),  # Don't clean URLs!
             'latestSaleAddress': latest_sale_address,
-            'latestSaleDate': latest_sale_date
+            'latestSaleDate': latest_sale_date  # Don't clean dates!
         }
 
         print(f"  ✓ Got profile data: {email}, {cell_phone}, {sales_stats.get('countAllTime', 0)} total sales")
