@@ -464,7 +464,7 @@ def init_zillow_session():
         import traceback
         traceback.print_exc()
 
-def enrich_with_zillow(first_name, last_name, city_state):
+def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
     """Human Journey: Homepage → Search → Profile with sticky session"""
     try:
         # Generate unique session ID for this agent (sticky IP)
@@ -547,12 +547,10 @@ def enrich_with_zillow(first_name, last_name, city_state):
             return ' '.join(cleaned.lower().split())
 
         # Find matching agent with sales verification
-        best_match = None
         realtor_clean = clean_for_match(full_name_realtor)
+        name_matches = []
 
-        # Get realtor.com 12mo sales for comparison (from lead data passed earlier)
-        # We'll pass this in from the caller
-
+        # Collect all name matches
         for card in results:
             if card.get('__typename') == 'AgentDirectoryFinderProfileResultsCard':
                 card_name = card.get('cardTitle', '')
@@ -560,7 +558,7 @@ def enrich_with_zillow(first_name, last_name, city_state):
 
                 # Bidirectional match: does realtor contain zillow OR zillow contain realtor
                 if realtor_clean in zillow_clean or zillow_clean in realtor_clean:
-                    # Extract Zillow 12mo sales to verify
+                    # Extract Zillow 12mo sales
                     profile_data = card.get('profileData', [])
                     zillow_12mo = 0
                     for item in profile_data:
@@ -568,16 +566,31 @@ def enrich_with_zillow(first_name, last_name, city_state):
                             zillow_12mo = int(item.get('data') or 0)
                             break
 
-                    print(f"NAME MATCH: '{card_name}' ≈ '{full_name_realtor}'")
-                    print(f"  Zillow 12mo sales: {zillow_12mo}")
+                    name_matches.append({
+                        'card': card,
+                        'name': card_name,
+                        'zillow_12mo': zillow_12mo
+                    })
 
-                    # For now, take first name match (we'll add sales verification after)
-                    best_match = card
-                    break
-
-        if not best_match:
-            print(f"No Zillow match for '{full_name_realtor}'")
+        if not name_matches:
+            print(f"No Zillow name match for '{full_name_realtor}'")
             return None
+
+        # Try to find match within 10 sales
+        best_match = None
+        for match in name_matches:
+            sales_diff = abs(match['zillow_12mo'] - realtor_12mo_sales)
+            print(f"  '{match['name']}': Zillow 12mo={match['zillow_12mo']}, Realtor 12mo={realtor_12mo_sales}, diff={sales_diff}")
+
+            if sales_diff <= 10:
+                best_match = match['card']
+                print(f"  ✓ VERIFIED MATCH (sales within 10)")
+                break
+
+        # If no match within 10, use first result
+        if not best_match:
+            best_match = name_matches[0]['card']
+            print(f"  Using first match (no sales match within 10)")
 
         # Extract profile data from matched card
         profile_data = best_match.get('profileData', [])
@@ -782,8 +795,9 @@ def enrich_realtor(lead):
     # Convert to Zillow format: "Oklahoma-City_OK" -> "oklahoma-city-ok"
     city_state = city_state_slug.lower().replace('_', '-')
 
-    # Enrich with Zillow data
-    zillow_data = enrich_with_zillow(first_name, last_name, city_state)
+    # Enrich with Zillow data (pass realtor 12mo sales for verification)
+    realtor_12mo = int(lead.get('sales12Months', 0))
+    zillow_data = enrich_with_zillow(first_name, last_name, city_state, realtor_12mo)
 
     if zillow_data:
         print(f"✓ Using Zillow data")
