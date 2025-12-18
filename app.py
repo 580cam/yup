@@ -575,9 +575,20 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
                         'zillow_12mo': zillow_12mo
                     })
 
-        # SECOND: If no exact matches, try fuzzy (first 3 letters)
-        if not name_matches:
-            print(f"  No exact matches, trying fuzzy matching...")
+        # Check if any exact matches have sales within 10
+        has_good_match = False
+        if name_matches:
+            for match in name_matches:
+                if abs(match['zillow_12mo'] - realtor_12mo_sales) <= 10:
+                    has_good_match = True
+                    break
+
+        # SECOND: If no exact matches OR no good sales match, try fuzzy
+        if not name_matches or not has_good_match:
+            if name_matches:
+                print(f"  Exact matches found but sales don't match (diff > 10), trying fuzzy...")
+            else:
+                print(f"  No exact matches, trying fuzzy matching...")
 
             for i, card in enumerate(results):
                 if card.get('__typename') == 'AgentDirectoryFinderProfileResultsCard':
