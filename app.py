@@ -131,13 +131,22 @@ def search_social_media_with_apify(agent_name, city_state, platform):
         for item in apify_client.dataset(run["defaultDatasetId"]).iterate_items():
             if 'organicResults' in item:
                 for result in item['organicResults']:
+                    url = result.get('url', '')
+
+                    # Filter for PROFILES ONLY (not posts/reels/stories)
+                    if platform == 'instagram':
+                        # Instagram profiles: instagram.com/username/ or instagram.com/username
+                        # Exclude posts (/p/), reels (/reel/), stories (/stories/), etc.
+                        if '/p/' in url or '/reel/' in url or '/stories/' in url or '/tv/' in url or '/explore/' in url:
+                            continue  # Skip posts/reels/stories
+
                     results.append({
                         'title': result.get('title', ''),
-                        'url': result.get('url', ''),
+                        'url': url,
                         'description': result.get('description', '')
                     })
 
-        print(f"  ✓ Found {len(results)} {platform} results from Apify")
+        print(f"  ✓ Found {len(results)} {platform} profile results from Apify")
         if results:
             for i, r in enumerate(results[:3], 1):
                 print(f"    {i}. {r['title'][:60]}...")
@@ -171,32 +180,39 @@ def match_social_profile_with_ai(agent_data, search_results, platform):
 - Location: {agent_data.get('city', '')}
 - Profession: Real Estate Agent"""
 
-        # AI prompt
+        # AI prompt - VERY STRICT matching
         prompt = f"""{agent_context}
 
 Search Results from Google:
 {search_context}
 
-Task: Analyze these {platform} search results and determine which profile most likely belongs to this real estate agent.
+Task: Analyze these {platform} search results and determine which profile belongs to this EXACT real estate agent.
 
-Match based on:
-1. Name match (exact or close variation)
-2. Location match (same city/area)
-3. Profession indicators (realtor, real estate, agent)
-4. Profile legitimacy (not spam, not unrelated person with same name)
+STRICT Matching Criteria (ALL must be met):
+1. **Name match**: First name AND last name must match EXACTLY or be very close variations (e.g., "Chris" vs "Christopher")
+2. **Location match**: Must be in the same city/area ({agent_data.get('city', '')})
+3. **Profession**: Profile must clearly indicate real estate agent/realtor
+4. **Profile type**: Must be a PROFILE, not a post or random mention
 
-IMPORTANT: Only return a match if you're confident (70%+ certainty). If no results are a good match, return "null".
+CRITICAL RULES:
+- If the name doesn't match closely, return "null" (no partial name matches)
+- If the location is different city/state, return "null"
+- If the profile is for a different person with same name, return "null"
+- If you're not 95%+ confident it's the same person, return "null"
+- Better to return "null" than to match the wrong person
 
-Response format: Return ONLY the full URL of the best match, or "null" if no confident match. No explanation, just the URL or null."""
+IMPORTANT: Only return a match if you're 95%+ confident it's the EXACT SAME PERSON. When in doubt, return "null".
 
-        # Call OpenAI
+Response format: Return ONLY the full URL of the match, or "null" if not confident. No explanation, just the URL or null."""
+
+        # Call OpenAI with very low temperature for strict matching
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a precise data matching assistant. You match social media profiles to real estate agents based on search results."},
+                {"role": "system", "content": "You are a STRICT data matching assistant. You only match social media profiles when you are 95%+ confident it's the exact same person. When in doubt, return null. Never guess or match loosely."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.1,
+            temperature=0.0,  # Maximum strictness
             max_tokens=200
         )
 
