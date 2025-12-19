@@ -904,21 +904,36 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
         soup = BeautifulSoup(response.content, 'html.parser')
 
         # Parse social media links from HTML directly (JSON often missing them)
+        # ONLY look within the agent profile section to avoid Zillow corporate links
         html_socials = {'facebook': '', 'linkedin': '', 'instagram': '', 'twitter': '', 'youtube': ''}
 
-        # Find all social media links in HTML
-        for link in soup.find_all('a', href=True):
+        # Find all social media links in HTML with rel="noreferrer" (agent's personal links)
+        for link in soup.find_all('a', href=True, rel=True):
+            # Skip if not a profile link (agent links have rel="noreferrer")
+            if 'noreferrer' not in link.get('rel', []):
+                continue
+
             href = link.get('href', '').lower()
+
+            # Skip Zillow's own social media
+            if 'zillow' in href:
+                continue
+
             if 'facebook.com' in href or 'fb.com' in href:
                 html_socials['facebook'] = link['href']
+                print(f"  Found Facebook (HTML): {link['href']}")
             elif 'instagram.com' in href:
                 html_socials['instagram'] = link['href']
+                print(f"  Found Instagram (HTML): {link['href']}")
             elif 'linkedin.com' in href:
                 html_socials['linkedin'] = link['href']
+                print(f"  Found LinkedIn (HTML): {link['href']}")
             elif 'twitter.com' in href or 'x.com' in href:
                 html_socials['twitter'] = link['href']
+                print(f"  Found Twitter (HTML): {link['href']}")
             elif 'youtube.com' in href:
                 html_socials['youtube'] = link['href']
+                print(f"  Found YouTube (HTML): {link['href']}")
 
         print(f"  HTML parsed social links: FB={bool(html_socials['facebook'])}, IG={bool(html_socials['instagram'])}, LI={bool(html_socials['linkedin'])}")
 
