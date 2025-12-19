@@ -762,6 +762,9 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
             'websiteUrl': get_to_know.get('websiteUrl', ''),  # Don't clean URLs!
             'facebookUrl': get_to_know.get('facebookUrl', ''),  # Don't clean URLs!
             'linkedInUrl': get_to_know.get('linkedInUrl', ''),  # Don't clean URLs!
+            'instagramUrl': get_to_know.get('instagramUrl', ''),  # Don't clean URLs!
+            'twitterUrl': get_to_know.get('twitterUrl', ''),  # Don't clean URLs!
+            'youtubeUrl': get_to_know.get('youtubeUrl', ''),  # Don't clean URLs!
             'latestSaleAddress': latest_sale_address,
             'latestSaleDate': latest_sale_date  # Don't clean dates!
         }
@@ -860,9 +863,9 @@ def enrich_csv_lead_with_zillow(lead):
             'socialMedia': {
                 'facebook': zillow_data.get('facebookUrl', ''),
                 'linkedin': zillow_data.get('linkedInUrl', ''),
-                'instagram': '',
-                'twitter': '',
-                'youtube': '',
+                'instagram': zillow_data.get('instagramUrl', ''),
+                'twitter': zillow_data.get('twitterUrl', ''),
+                'youtube': zillow_data.get('youtubeUrl', ''),
                 'tiktok': ''
             }
         }
@@ -947,9 +950,9 @@ def enrich_realtor(lead):
             'socialMedia': {
                 'facebook': zillow_data.get('facebookUrl', ''),  # Don't clean URLs!
                 'linkedin': zillow_data.get('linkedInUrl', ''),  # Don't clean URLs!
-                'instagram': '',
-                'twitter': '',
-                'youtube': '',
+                'instagram': zillow_data.get('instagramUrl', ''),  # Don't clean URLs!
+                'twitter': zillow_data.get('twitterUrl', ''),  # Don't clean URLs!
+                'youtube': zillow_data.get('youtubeUrl', ''),  # Don't clean URLs!
                 'tiktok': ''
             }
         }
