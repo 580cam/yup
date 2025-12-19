@@ -290,6 +290,9 @@ def scrape():
                         print(f"ENRICHING AGENT #{enriched_count}")
                         print(f"========================================")
 
+                        # Send keepalive before starting (prevents timeout)
+                        yield ": keepalive\n\n"
+
                         # Enrich ALL agents with Zillow
                         enriched = enrich_realtor(agent)
 
@@ -314,6 +317,9 @@ def scrape():
                     print(f"========================================")
                     print(f"ENRICHING CSV LEAD {i+1}/{len(leads)}")
                     print(f"========================================")
+
+                    # Send keepalive before starting (prevents timeout)
+                    yield ": keepalive\n\n"
 
                     # CSV mode: ONLY Zillow enrichment (they already have realtor.com data)
                     enriched = enrich_csv_lead_with_zillow(lead)
