@@ -875,17 +875,25 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
         except Exception as e:
             error_msg = str(e).lower()
 
-            # Check if it's a timeout error
-            if 'timeout' in error_msg or 'timed out' in error_msg:
+            # Check if it's a retryable error (timeout or 403)
+            is_timeout = 'timeout' in error_msg or 'timed out' in error_msg
+            is_403 = '403' in error_msg or 'forbidden' in error_msg
+
+            if is_timeout:
                 print(f"  ⏱️ Timeout error on attempt {attempt + 1}/{max_retries}")
+            elif is_403:
+                print(f"  🚫 403 Forbidden error on attempt {attempt + 1}/{max_retries}")
+
+            if is_timeout or is_403:
                 if attempt < max_retries - 1:
-                    print(f"  🔄 Retrying with new session...")
+                    print(f"  🔄 Retrying with new session and proxy...")
+                    time.sleep(random.uniform(3.0, 6.0))  # Extra delay before retry
                     continue  # Retry with new session
                 else:
                     print(f"  ❌ All retries exhausted, skipping agent")
                     return None
             else:
-                # Non-timeout error, don't retry
+                # Non-retryable error, don't retry
                 print(f"Error in Human Journey for {first_name} {last_name}: {e}")
                 import traceback
                 traceback.print_exc()
