@@ -572,19 +572,26 @@ def init_zillow_session():
 
 def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
     """Human Journey: Homepage → Search → Profile with sticky session"""
-    try:
-        # Generate unique session ID for this agent (sticky IP)
-        run_session_id = str(uuid.uuid4())[:8]
-        sticky_proxy_url = get_sticky_proxy_url(run_session_id)
-        proxies = {'http': sticky_proxy_url, 'https': sticky_proxy_url}
 
-        # Random delay before starting (break patterns)
-        time.sleep(random.uniform(2.0, 4.0))
+    max_retries = 2
 
-        print(f"Starting Human Journey for {first_name} {last_name} (session: {run_session_id})")
+    for attempt in range(max_retries):
+        try:
+            # Generate unique session ID for this agent (sticky IP)
+            run_session_id = str(uuid.uuid4())[:8]
+            sticky_proxy_url = get_sticky_proxy_url(run_session_id)
+            proxies = {'http': sticky_proxy_url, 'https': sticky_proxy_url}
 
-        # Create FRESH session for this agent
-        session = curl_requests.Session()
+            # Random delay before starting (break patterns)
+            time.sleep(random.uniform(2.0, 4.0))
+
+            if attempt > 0:
+                print(f"Retry #{attempt} for {first_name} {last_name} (new session: {run_session_id})")
+            else:
+                print(f"Starting Human Journey for {first_name} {last_name} (session: {run_session_id})")
+
+            # Create FRESH session for this agent
+            session = curl_requests.Session()
 
         # STEP 1: Visit homepage (lander) to get cookies
         print(f"  Step 1: Landing on homepage...")
@@ -848,11 +855,28 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
             'totalSalesInCity': total_sales_in_city,
             'sales12Months': sales_last_12mo
         }
+
     except Exception as e:
-        print(f"Error in Human Journey for {first_name} {last_name}: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
+        error_msg = str(e).lower()
+
+        # Check if it's a timeout error
+        if 'timeout' in error_msg or 'timed out' in error_msg:
+            print(f"  ⏱️ Timeout error on attempt {attempt + 1}/{max_retries}")
+            if attempt < max_retries - 1:
+                print(f"  🔄 Retrying with new session...")
+                continue  # Retry with new session
+            else:
+                print(f"  ❌ All retries exhausted, skipping agent")
+                return None
+        else:
+            # Non-timeout error, don't retry
+            print(f"Error in Human Journey for {first_name} {last_name}: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
+
+    # If we get here, all retries failed
+    return None
 
 def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
     """STEP 3: Visit profile page with same session"""
