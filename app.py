@@ -105,11 +105,11 @@ def search_social_media_with_apify(agent_name, city_state, platform):
     platform: 'instagram' or 'facebook'
     """
     try:
-        print(f"  Searching {platform} for {agent_name}...")
-
         # Build search query
         site = f"site:{platform}.com" if platform in ['instagram', 'facebook'] else platform
         query = f'{site} "{agent_name}" realtor {city_state.replace("-", " ")}'
+
+        print(f"  Query: {query}")
 
         # Apify Google Search actor input
         run_input = {
@@ -121,8 +121,10 @@ def search_social_media_with_apify(agent_name, city_state, platform):
             "saveHtmlToKeyValueStore": False,
         }
 
+        print(f"  Calling Apify actor...")
         # Run the Actor and wait for it to finish
         run = apify_client.actor("nFJndFXA5zjCTuudP").call(run_input=run_input)
+        print(f"  Apify run completed. Dataset ID: {run['defaultDatasetId']}")
 
         # Fetch results
         results = []
@@ -135,11 +137,17 @@ def search_social_media_with_apify(agent_name, city_state, platform):
                         'description': result.get('description', '')
                     })
 
-        print(f"  Found {len(results)} {platform} results")
+        print(f"  ✓ Found {len(results)} {platform} results from Apify")
+        if results:
+            for i, r in enumerate(results[:3], 1):
+                print(f"    {i}. {r['title'][:60]}...")
+
         return results
 
     except Exception as e:
-        print(f"  Error searching {platform}: {e}")
+        print(f"  ❌ Error searching {platform}: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 def match_social_profile_with_ai(agent_data, search_results, platform):
@@ -775,36 +783,63 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
             missing_instagram = not result.get('instagramUrl', '')
             missing_facebook = not result.get('facebookUrl', '')
 
+            print(f"")
+            print(f"========== SOCIAL MEDIA CHECK ==========")
+            print(f"  Instagram: {'MISSING' if missing_instagram else 'FOUND'}")
+            print(f"  Facebook: {'MISSING' if missing_facebook else 'FOUND'}")
+
             if missing_instagram or missing_facebook:
-                print(f"  Missing social media - Instagram: {missing_instagram}, Facebook: {missing_facebook}")
+                if not apify_client or not openai_client:
+                    print(f"  ⚠ AI search disabled - missing API keys")
+                else:
+                    agent_info = {
+                        'firstName': first_name,
+                        'lastName': last_name,
+                        'city': city_state
+                    }
 
-                agent_info = {
-                    'firstName': first_name,
-                    'lastName': last_name,
-                    'city': city_state
-                }
+                    # Search for Instagram if missing
+                    if missing_instagram:
+                        print(f"")
+                        print(f"  🔍 Starting Instagram search...")
+                        instagram_results = search_social_media_with_apify(
+                            f"{first_name} {last_name}",
+                            city_state,
+                            "instagram"
+                        )
+                        if instagram_results:
+                            print(f"  🤖 Sending {len(instagram_results)} results to AI for matching...")
+                            matched_instagram = match_social_profile_with_ai(agent_info, instagram_results, "instagram")
+                            if matched_instagram:
+                                result['instagramUrl'] = matched_instagram
+                                print(f"  ✅ Instagram added: {matched_instagram}")
+                            else:
+                                print(f"  ❌ AI found no confident Instagram match")
+                        else:
+                            print(f"  ❌ No Instagram results from Apify")
 
-                # Search for Instagram if missing
-                if missing_instagram:
-                    instagram_results = search_social_media_with_apify(
-                        f"{first_name} {last_name}",
-                        city_state,
-                        "instagram"
-                    )
-                    matched_instagram = match_social_profile_with_ai(agent_info, instagram_results, "instagram")
-                    if matched_instagram:
-                        result['instagramUrl'] = matched_instagram
+                    # Search for Facebook if missing
+                    if missing_facebook:
+                        print(f"")
+                        print(f"  🔍 Starting Facebook search...")
+                        facebook_results = search_social_media_with_apify(
+                            f"{first_name} {last_name}",
+                            city_state,
+                            "facebook"
+                        )
+                        if facebook_results:
+                            print(f"  🤖 Sending {len(facebook_results)} results to AI for matching...")
+                            matched_facebook = match_social_profile_with_ai(agent_info, facebook_results, "facebook")
+                            if matched_facebook:
+                                result['facebookUrl'] = matched_facebook
+                                print(f"  ✅ Facebook added: {matched_facebook}")
+                            else:
+                                print(f"  ❌ AI found no confident Facebook match")
+                        else:
+                            print(f"  ❌ No Facebook results from Apify")
 
-                # Search for Facebook if missing
-                if missing_facebook:
-                    facebook_results = search_social_media_with_apify(
-                        f"{first_name} {last_name}",
-                        city_state,
-                        "facebook"
-                    )
-                    matched_facebook = match_social_profile_with_ai(agent_info, facebook_results, "facebook")
-                    if matched_facebook:
-                        result['facebookUrl'] = matched_facebook
+            print(f"========================================")
+            print(f"")
 
             return result
 
@@ -899,6 +934,48 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
             latest_sale_address = clean_str(latest.get('street_address', ''))
             latest_sale_date = latest.get('sold_date', '')  # Don't clean date!
 
+        # Get social media URLs (Zillow sometimes mislabels them!)
+        facebook_url = get_to_know.get('facebookUrl', '')
+        linkedin_url = get_to_know.get('linkedInUrl', '')
+        instagram_url = get_to_know.get('instagramUrl', '')
+        twitter_url = get_to_know.get('twitterUrl', '')
+        youtube_url = get_to_know.get('youtubeUrl', '')
+
+        # Fix Zillow's mislabeling - check if URLs match their field names
+        all_socials = [
+            ('facebook', facebook_url),
+            ('linkedin', linkedin_url),
+            ('instagram', instagram_url),
+            ('twitter', twitter_url),
+            ('youtube', youtube_url)
+        ]
+
+        # Remap if URL domain doesn't match field name
+        corrected_socials = {'facebook': '', 'linkedin': '', 'instagram': '', 'twitter': '', 'youtube': ''}
+
+        for field_name, url in all_socials:
+            if not url:
+                continue
+
+            url_lower = url.lower()
+
+            # Detect actual platform from URL
+            if 'instagram.com' in url_lower:
+                corrected_socials['instagram'] = url
+                print(f"  Found Instagram: {url}")
+            elif 'facebook.com' in url_lower or 'fb.com' in url_lower:
+                corrected_socials['facebook'] = url
+                print(f"  Found Facebook: {url}")
+            elif 'linkedin.com' in url_lower:
+                corrected_socials['linkedin'] = url
+                print(f"  Found LinkedIn: {url}")
+            elif 'twitter.com' in url_lower or 'x.com' in url_lower:
+                corrected_socials['twitter'] = url
+                print(f"  Found Twitter: {url}")
+            elif 'youtube.com' in url_lower:
+                corrected_socials['youtube'] = url
+                print(f"  Found YouTube: {url}")
+
         result = {
             'email': clean_str(email),
             'phone': clean_str(cell_phone),
@@ -913,17 +990,18 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
             'businessName': clean_str(display_user.get('businessName', '')),
             'businessAddress': clean_str(full_address.strip(', ')),
             'pronouns': clean_str(display_user.get('cpdUserPronouns', '')),
-            'websiteUrl': get_to_know.get('websiteUrl', ''),  # Don't clean URLs!
-            'facebookUrl': get_to_know.get('facebookUrl', ''),  # Don't clean URLs!
-            'linkedInUrl': get_to_know.get('linkedInUrl', ''),  # Don't clean URLs!
-            'instagramUrl': get_to_know.get('instagramUrl', ''),  # Don't clean URLs!
-            'twitterUrl': get_to_know.get('twitterUrl', ''),  # Don't clean URLs!
-            'youtubeUrl': get_to_know.get('youtubeUrl', ''),  # Don't clean URLs!
+            'websiteUrl': get_to_know.get('websiteUrl', ''),
+            'facebookUrl': corrected_socials['facebook'],
+            'linkedInUrl': corrected_socials['linkedin'],
+            'instagramUrl': corrected_socials['instagram'],
+            'twitterUrl': corrected_socials['twitter'],
+            'youtubeUrl': corrected_socials['youtube'],
             'latestSaleAddress': latest_sale_address,
-            'latestSaleDate': latest_sale_date  # Don't clean dates!
+            'latestSaleDate': latest_sale_date
         }
 
         print(f"  ✓ Got profile data: {email}, {cell_phone}, {sales_stats.get('countAllTime', 0)} total sales")
+        print(f"  Social media - FB: {bool(corrected_socials['facebook'])}, IG: {bool(corrected_socials['instagram'])}, LI: {bool(corrected_socials['linkedin'])}")
 
         return result
 
