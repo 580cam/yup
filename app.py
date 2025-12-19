@@ -856,24 +856,24 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
                 'sales12Months': sales_last_12mo
             }
 
-    except Exception as e:
-        error_msg = str(e).lower()
+        except Exception as e:
+            error_msg = str(e).lower()
 
-        # Check if it's a timeout error
-        if 'timeout' in error_msg or 'timed out' in error_msg:
-            print(f"  ⏱️ Timeout error on attempt {attempt + 1}/{max_retries}")
-            if attempt < max_retries - 1:
-                print(f"  🔄 Retrying with new session...")
-                continue  # Retry with new session
+            # Check if it's a timeout error
+            if 'timeout' in error_msg or 'timed out' in error_msg:
+                print(f"  ⏱️ Timeout error on attempt {attempt + 1}/{max_retries}")
+                if attempt < max_retries - 1:
+                    print(f"  🔄 Retrying with new session...")
+                    continue  # Retry with new session
+                else:
+                    print(f"  ❌ All retries exhausted, skipping agent")
+                    return None
             else:
-                print(f"  ❌ All retries exhausted, skipping agent")
+                # Non-timeout error, don't retry
+                print(f"Error in Human Journey for {first_name} {last_name}: {e}")
+                import traceback
+                traceback.print_exc()
                 return None
-        else:
-            # Non-timeout error, don't retry
-            print(f"Error in Human Journey for {first_name} {last_name}: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
 
     # If we get here, all retries failed
     return None
