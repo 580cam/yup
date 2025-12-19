@@ -648,10 +648,10 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
 
         if profile_data:
             return {
-                'zillowUrl': zillow_url,
+                **profile_data,  # Merge profile data first
+                'zillowUrl': zillow_url,  # Override with correct URL
                 'totalSalesInCity': total_sales_in_city,
-                'sales12Months': sales_last_12mo,
-                **profile_data  # Merge profile data
+                'sales12Months': sales_last_12mo
             }
 
         return {
@@ -835,8 +835,8 @@ def enrich_csv_lead_with_zillow(lead):
     zillow_data = enrich_with_zillow(first_name, last_name, city_state, realtor_12mo)
 
     if zillow_data:
-        # Merge CSV data with Zillow data
-        return {
+        # Merge CSV data with Zillow data - zillowUrl MUST come from Zillow, not CSV
+        result = {
             **lead,  # Keep all original CSV data
             'email': zillow_data.get('email', lead.get('email', '')),
             'phone': zillow_data.get('phone', lead.get('phone', '')),
@@ -857,7 +857,6 @@ def enrich_csv_lead_with_zillow(lead):
             'latestSaleDate': zillow_data.get('latestSaleDate', ''),
             'avgHomeValue': lead.get('avgHomeValue', 'N/A'),  # Preserve from CSV
             'profileUrl': lead.get('profileUrl', ''),  # Preserve from CSV
-            'zillowUrl': zillow_data.get('zillowUrl', ''),
             'socialMedia': {
                 'facebook': zillow_data.get('facebookUrl', ''),
                 'linkedin': zillow_data.get('linkedInUrl', ''),
@@ -867,6 +866,9 @@ def enrich_csv_lead_with_zillow(lead):
                 'tiktok': ''
             }
         }
+        # Force override zillowUrl AFTER everything else to ensure it's not empty
+        result['zillowUrl'] = zillow_data.get('zillowUrl', '')
+        return result
     else:
         # Return original CSV data unchanged
         return lead
