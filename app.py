@@ -739,27 +739,35 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
                         fuzzy_matches.append({'card': card, 'name': card_name, 'zillow_12mo': zillow_12mo})
     
             # DECISION TREE:
-            # 1. Try exact matches with sales within 10
-            # 2. Try fuzzy matches with sales within 10
+            # 1. Find exact match with CLOSEST sales (within 10)
+            # 2. Find fuzzy match with CLOSEST sales (within 10)
             # 3. Use first exact match
             # 4. Give up
-    
+
             best_match = None
-    
-            # Check exact matches first
+            best_diff = float('inf')
+
+            # Check exact matches - find the one with CLOSEST sales
             for match in exact_matches:
-                if abs(match['zillow_12mo'] - realtor_12mo_sales) <= 10:
+                diff = abs(match['zillow_12mo'] - realtor_12mo_sales)
+                if diff <= 10 and diff < best_diff:
                     best_match = match
-                    print(f"  ✓ Using EXACT match with verified sales: {match['name']} (diff={abs(match['zillow_12mo'] - realtor_12mo_sales)})")
-                    break
-    
-            # If no good exact, try fuzzy
+                    best_diff = diff
+
+            if best_match:
+                print(f"  ✓ Using EXACT match with verified sales: {best_match['name']} (diff={best_diff})")
+
+            # If no good exact, try fuzzy - find the one with CLOSEST sales
             if not best_match:
+                best_diff = float('inf')
                 for match in fuzzy_matches:
-                    if abs(match['zillow_12mo'] - realtor_12mo_sales) <= 10:
+                    diff = abs(match['zillow_12mo'] - realtor_12mo_sales)
+                    if diff <= 10 and diff < best_diff:
                         best_match = match
-                        print(f"  ✓ Using FUZZY match with verified sales: {match['name']} (diff={abs(match['zillow_12mo'] - realtor_12mo_sales)})")
-                        break
+                        best_diff = diff
+
+                if best_match:
+                    print(f"  ✓ Using FUZZY match with verified sales: {best_match['name']} (diff={best_diff})")
     
             # Fallback to first exact
             if not best_match and exact_matches:
