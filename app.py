@@ -123,29 +123,24 @@ def scrape():
             areas = data.get('areas', [])
             for area in areas:
                 enriched_count = 0
-                max_enrich = 10  # TEST: 10 agents
                 total_agents = 0
 
-                # Stream agents immediately
+                # Stream ALL agents (no limit!)
                 for agent in stream_agents_from_area(area):
                     if agent is None:
                         yield ": keepalive\n\n"
                         continue
 
                     total_agents += 1
+                    enriched_count += 1
 
                     try:
-                        # Only enrich first 10 with Zillow
-                        if enriched_count < max_enrich:
-                            print(f"========================================")
-                            print(f"ZILLOW ENRICHMENT #{enriched_count + 1} OF {max_enrich}")
-                            print(f"========================================")
-                            enriched = enrich_realtor(agent)
-                            enriched_count += 1
-                        else:
-                            if total_agents == max_enrich + 1:
-                                print(f"*** STOPPING ZILLOW ENRICHMENT - REACHED {max_enrich} LIMIT ***")
-                            enriched = enrich_realtor_basic(agent)
+                        print(f"========================================")
+                        print(f"ENRICHING AGENT #{enriched_count}")
+                        print(f"========================================")
+
+                        # Enrich ALL agents with Zillow
+                        enriched = enrich_realtor(agent)
 
                         # Yield immediately!
                         json_str = json.dumps(enriched, ensure_ascii=True, separators=(',', ':'))

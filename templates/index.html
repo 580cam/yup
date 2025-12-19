@@ -221,6 +221,7 @@
         <div id="progress" class="progress hidden">
             <div class="spinner"></div>
             <span id="progress-text">Processing...</span>
+            <button class="download" onclick="pauseSearch()" style="margin-top:10px">Pause & Download</button>
         </div>
 
         <div id="results" class="results hidden">
@@ -234,6 +235,15 @@
 
     <script>
         let results = [];
+        let abortController = null;
+
+        function pauseSearch() {
+            if (abortController) {
+                abortController.abort();
+                hideProgress();
+                alert('Paused! Download your results below. Click search again to continue from where you left off.');
+            }
+        }
 
         function switchTab(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -255,14 +265,16 @@
             const areas = input.split(',').map(a => a.trim());
 
             showProgress('Searching for realtors...');
-            hideResults();
-            results = [];
+            // DON'T reset results - allows resume!
 
             try {
+                abortController = new AbortController();
+
                 const response = await fetch('/api/scrape', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mode: 'area', areas })
+                    body: JSON.stringify({ mode: 'area', areas }),
+                    signal: abortController.signal
                 });
 
                 const reader = response.body.getReader();
@@ -290,7 +302,11 @@
                     }
                 }
             } catch (error) {
-                alert('Error: ' + error.message);
+                if (error.name === 'AbortError') {
+                    console.log('Search paused by user');
+                } else {
+                    alert('Error: ' + error.message);
+                }
             } finally {
                 hideProgress();
             }
