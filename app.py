@@ -139,6 +139,11 @@ def search_social_media_with_apify(agent_name, city_state, platform):
                         # Exclude posts (/p/), reels (/reel/), stories (/stories/), etc.
                         if '/p/' in url or '/reel/' in url or '/stories/' in url or '/tv/' in url or '/explore/' in url:
                             continue  # Skip posts/reels/stories
+                    elif platform == 'facebook':
+                        # Facebook profiles: facebook.com/username or facebook.com/pages/...
+                        # Exclude posts, photos, events, groups
+                        if any(x in url for x in ['/posts/', '/photo.php', '/permalink.php', '/story.php', '/events/', '/groups/', '/videos/']):
+                            continue  # Skip posts/photos/events/groups
 
                     results.append({
                         'title': result.get('title', ''),
