@@ -190,29 +190,29 @@ Task: Analyze these {platform} search results and determine which profile belong
 
 STRICT Matching Criteria (ALL must be met):
 1. **Name match**: First name AND last name must match EXACTLY or be very close variations (e.g., "Chris" vs "Christopher")
-2. **Location match**: Must be in the same city/area ({agent_data.get('city', '')})
-3. **Profession**: Profile must clearly indicate real estate agent/realtor
+2. **Location match**: Must be in the same metro area or nearby cities (Oklahoma City area includes: Oklahoma City, Edmond, Norman, Moore, Yukon, Mustang, etc.)
+3. **Profession**: Profile must clearly indicate real estate agent/realtor/broker or show a real estate company (Keller Williams, RE/MAX, Coldwell Banker, etc.)
 4. **Profile type**: Must be a PROFILE, not a post or random mention
 
-CRITICAL RULES:
-- If the name doesn't match closely, return "null" (no partial name matches)
-- If the location is different city/state, return "null"
-- If the profile is for a different person with same name, return "null"
-- If you're not 95%+ confident it's the same person, return "null"
-- Better to return "null" than to match the wrong person
+MATCHING GUIDELINES:
+- Same first + last name + real estate profession + same metro area = MATCH
+- If multiple results show the same person repeatedly = high confidence match
+- Different state or far away city = NO MATCH
+- Different profession or no real estate indicators = NO MATCH
+- Generic profile with no location/profession info = NO MATCH
 
-IMPORTANT: Only return a match if you're 95%+ confident it's the EXACT SAME PERSON. When in doubt, return "null".
+IMPORTANT: Only return a match if you're 90%+ confident it's the EXACT SAME PERSON. If unclear, return "null".
 
 Response format: Return ONLY the full URL of the match, or "null" if not confident. No explanation, just the URL or null."""
 
-        # Call OpenAI with very low temperature for strict matching
+        # Call OpenAI with strict but reasonable matching
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a STRICT data matching assistant. You only match social media profiles when you are 95%+ confident it's the exact same person. When in doubt, return null. Never guess or match loosely."},
+                {"role": "system", "content": "You are a data matching assistant for real estate agents. Match profiles when name + profession + location align well. If multiple results show the same person, that's high confidence. Return null only if unclear or different person."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.0,  # Maximum strictness
+            temperature=0.1,  # Strict but not overly rigid
             max_tokens=200
         )
 
