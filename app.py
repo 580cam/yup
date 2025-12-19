@@ -6,11 +6,22 @@ import io
 import time
 import re
 import uuid
+import os
 from datetime import datetime
 from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_requests
+from apify_client import ApifyClient
+from openai import OpenAI
 
 app = Flask(__name__)
+
+# Apify API credentials from environment
+APIFY_API_TOKEN = os.environ.get('APIFY_API_TOKEN', '')
+apify_client = ApifyClient(APIFY_API_TOKEN) if APIFY_API_TOKEN else None
+
+# OpenAI API credentials from environment
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 # Rotating user agents - look more real (30+ different browsers)
 USER_AGENTS = [
@@ -87,6 +98,112 @@ def safe_int(value, default=0):
         return int(value)
     except (ValueError, TypeError):
         return default
+
+def search_social_media_with_apify(agent_name, city_state, platform):
+    """
+    Use Apify to search for missing social media profiles
+    platform: 'instagram' or 'facebook'
+    """
+    try:
+        print(f"  Searching {platform} for {agent_name}...")
+
+        # Build search query
+        site = f"site:{platform}.com" if platform in ['instagram', 'facebook'] else platform
+        query = f'{site} "{agent_name}" realtor {city_state.replace("-", " ")}'
+
+        # Apify Google Search actor input
+        run_input = {
+            "queries": query,
+            "resultsPerPage": 10,
+            "maxPagesPerQuery": 1,
+            "aiMode": "aiModeOff",
+            "saveHtml": False,
+            "saveHtmlToKeyValueStore": False,
+        }
+
+        # Run the Actor and wait for it to finish
+        run = apify_client.actor("nFJndFXA5zjCTuudP").call(run_input=run_input)
+
+        # Fetch results
+        results = []
+        for item in apify_client.dataset(run["defaultDatasetId"]).iterate_items():
+            if 'organicResults' in item:
+                for result in item['organicResults']:
+                    results.append({
+                        'title': result.get('title', ''),
+                        'url': result.get('url', ''),
+                        'description': result.get('description', '')
+                    })
+
+        print(f"  Found {len(results)} {platform} results")
+        return results
+
+    except Exception as e:
+        print(f"  Error searching {platform}: {e}")
+        return []
+
+def match_social_profile_with_ai(agent_data, search_results, platform):
+    """
+    Use OpenAI GPT-4o-mini to match search results with agent profile
+    Returns the most likely social media URL or None
+    """
+    if not search_results:
+        return None
+
+    try:
+        # Build context from search results
+        search_context = "\n\n".join([
+            f"Result {i+1}:\n- Title: {r.get('title', '')}\n- URL: {r.get('url', '')}\n- Description: {r.get('description', '')}"
+            for i, r in enumerate(search_results)
+        ])
+
+        # Build agent context
+        agent_context = f"""Agent Information:
+- Name: {agent_data.get('firstName', '')} {agent_data.get('lastName', '')}
+- Location: {agent_data.get('city', '')}
+- Profession: Real Estate Agent"""
+
+        # AI prompt
+        prompt = f"""{agent_context}
+
+Search Results from Google:
+{search_context}
+
+Task: Analyze these {platform} search results and determine which profile most likely belongs to this real estate agent.
+
+Match based on:
+1. Name match (exact or close variation)
+2. Location match (same city/area)
+3. Profession indicators (realtor, real estate, agent)
+4. Profile legitimacy (not spam, not unrelated person with same name)
+
+IMPORTANT: Only return a match if you're confident (70%+ certainty). If no results are a good match, return "null".
+
+Response format: Return ONLY the full URL of the best match, or "null" if no confident match. No explanation, just the URL or null."""
+
+        # Call OpenAI
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a precise data matching assistant. You match social media profiles to real estate agents based on search results."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.1,
+            max_tokens=200
+        )
+
+        result = response.choices[0].message.content.strip()
+
+        if result.lower() == "null" or not result.startswith("http"):
+            print(f"  ✗ AI found no confident {platform} match")
+            return None
+
+        print(f"  ✓ AI matched {platform}: {result}")
+        return result
+
+    except Exception as e:
+        print(f"  Error in AI matching for {platform}: {e}")
+        return None
 
 GRAPHQL_URL = "https://www.realtor.com/frontdoor/graphql"
 HEADERS = {
@@ -647,12 +764,49 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
         session.close()
 
         if profile_data:
-            return {
+            result = {
                 **profile_data,  # Merge profile data first
                 'zillowUrl': zillow_url,  # Override with correct URL
                 'totalSalesInCity': total_sales_in_city,
                 'sales12Months': sales_last_12mo
             }
+
+            # Check for missing social media and search with Apify + AI
+            missing_instagram = not result.get('instagramUrl', '')
+            missing_facebook = not result.get('facebookUrl', '')
+
+            if missing_instagram or missing_facebook:
+                print(f"  Missing social media - Instagram: {missing_instagram}, Facebook: {missing_facebook}")
+
+                agent_info = {
+                    'firstName': first_name,
+                    'lastName': last_name,
+                    'city': city_state
+                }
+
+                # Search for Instagram if missing
+                if missing_instagram:
+                    instagram_results = search_social_media_with_apify(
+                        f"{first_name} {last_name}",
+                        city_state,
+                        "instagram"
+                    )
+                    matched_instagram = match_social_profile_with_ai(agent_info, instagram_results, "instagram")
+                    if matched_instagram:
+                        result['instagramUrl'] = matched_instagram
+
+                # Search for Facebook if missing
+                if missing_facebook:
+                    facebook_results = search_social_media_with_apify(
+                        f"{first_name} {last_name}",
+                        city_state,
+                        "facebook"
+                    )
+                    matched_facebook = match_social_profile_with_ai(agent_info, facebook_results, "facebook")
+                    if matched_facebook:
+                        result['facebookUrl'] = matched_facebook
+
+            return result
 
         return {
             'zillowUrl': zillow_url,

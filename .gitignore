@@ -1,1 +1,4 @@
 # Deploy trigger Tue Dec 16 01:14:51 CST 2025
+
+# Environment variables
+.env
