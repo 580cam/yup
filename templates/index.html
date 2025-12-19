@@ -322,15 +322,42 @@
 
             const text = await file.text();
             const lines = text.split('\n');
-            const headers = lines[0].split(',').map(h => h.trim());
+
+            // Proper CSV parsing that handles quoted fields with commas
+            function parseCSVLine(line) {
+                const result = [];
+                let current = '';
+                let inQuotes = false;
+
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    const nextChar = line[i + 1];
+
+                    if (char === '"' && inQuotes && nextChar === '"') {
+                        current += '"';
+                        i++; // Skip next quote
+                    } else if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) {
+                        result.push(current.trim());
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                result.push(current.trim());
+                return result;
+            }
+
+            const headers = parseCSVLine(lines[0]);
             const leads = [];
 
             for (let i = 1; i < lines.length; i++) {
                 if (!lines[i].trim()) continue;
-                const values = lines[i].split(',');
+                const values = parseCSVLine(lines[i]);
                 const lead = {};
                 headers.forEach((header, idx) => {
-                    lead[header] = values[idx]?.trim() || '';
+                    lead[header] = values[idx] || '';
                 });
                 leads.push(lead);
             }
