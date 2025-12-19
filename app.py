@@ -295,8 +295,9 @@ def scrape():
                         print(f"ENRICHING AGENT #{enriched_count}")
                         print(f"========================================")
 
-                        # Send keepalive before starting (prevents timeout)
-                        yield ": keepalive\n\n"
+                        # Send multiple keepalives to prevent timeout during long enrichment
+                        for _ in range(3):
+                            yield ": keepalive\n\n"
 
                         # Enrich ALL agents with Zillow
                         enriched = enrich_realtor(agent)
@@ -323,8 +324,9 @@ def scrape():
                     print(f"ENRICHING CSV LEAD {i+1}/{len(leads)}")
                     print(f"========================================")
 
-                    # Send keepalive before starting (prevents timeout)
-                    yield ": keepalive\n\n"
+                    # Send multiple keepalives to prevent timeout during long enrichment
+                    for _ in range(3):
+                        yield ": keepalive\n\n"
 
                     # CSV mode: ONLY Zillow enrichment (they already have realtor.com data)
                     enriched = enrich_csv_lead_with_zillow(lead)
@@ -340,7 +342,9 @@ def scrape():
 
     return app.response_class(generate(), mimetype='text/event-stream', headers={
         'Cache-Control': 'no-cache',
-        'X-Accel-Buffering': 'no'
+        'X-Accel-Buffering': 'no',
+        'Connection': 'keep-alive',
+        'Keep-Alive': 'timeout=86400'
     })
 
 def stream_agents_from_area(area):
