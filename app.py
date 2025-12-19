@@ -941,6 +941,14 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
         twitter_url = get_to_know.get('twitterUrl', '')
         youtube_url = get_to_know.get('youtubeUrl', '')
 
+        # DEBUG: Show raw URLs from Zillow JSON
+        print(f"  RAW Zillow JSON social URLs:")
+        print(f"    facebookUrl: {facebook_url}")
+        print(f"    linkedInUrl: {linkedin_url}")
+        print(f"    instagramUrl: {instagram_url}")
+        print(f"    twitterUrl: {twitter_url}")
+        print(f"    youtubeUrl: {youtube_url}")
+
         # Fix Zillow's mislabeling - check if URLs match their field names
         all_socials = [
             ('facebook', facebook_url),
