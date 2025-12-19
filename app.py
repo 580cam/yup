@@ -60,13 +60,13 @@ def get_sticky_proxy_url(session_id):
     username = f"{PROXY_USERNAME_BASE}-ip-{session_id}"
     return f"http://{username}:{PROXY_PASSWORD}@{PROXY_SERVER}"
 
-# Chrome 120 headers - matches TLS impersonation with full stealth
-CHROME_120_HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+# Chrome 131 headers - matches TLS impersonation EXACTLY
+CHROME_131_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.9',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'sec-ch-ua': '"Not_A Brand";v="99", "Chromium";v="120", "Google Chrome";v="120"',
+    'Accept-Encoding': 'gzip, deflate, br, zstd',
+    'sec-ch-ua': '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
     'sec-ch-ua-mobile': '?0',
     'sec-ch-ua-platform': '"Windows"',
     'sec-fetch-dest': 'document',
@@ -453,13 +453,13 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
 
         # STEP 1: Visit homepage (lander) to get cookies
         print(f"  Step 1: Landing on homepage...")
-        home_headers = CHROME_120_HEADERS.copy()
+        home_headers = CHROME_131_HEADERS.copy()
         home_headers['sec-fetch-site'] = 'none'  # Direct navigation
 
         home_response = session.get(
             'https://www.zillow.com/',
             headers=home_headers,
-            impersonate="chrome120",
+            impersonate="chrome131",
             proxies=proxies,
             timeout=20
         )
@@ -480,13 +480,13 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
 
         print(f"  Step 2: Searching for {full_name_realtor}...")
 
-        search_headers = CHROME_120_HEADERS.copy()
+        search_headers = CHROME_131_HEADERS.copy()
         search_headers['Referer'] = 'https://www.zillow.com/'
 
         search_response = session.get(
             search_url,
             headers=search_headers,
-            impersonate="chrome120",
+            impersonate="chrome131",
             proxies=proxies,
             timeout=20
         )
@@ -661,13 +661,13 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
         print(f"  Visiting profile: {profile_url}")
 
         # Use SAME session with cookies from homepage + search
-        profile_headers = CHROME_120_HEADERS.copy()
+        profile_headers = CHROME_131_HEADERS.copy()
         profile_headers['Referer'] = search_url  # Came from search results!
 
         response = session.get(
             profile_url,
             headers=profile_headers,
-            impersonate="chrome120",
+            impersonate="chrome131",
             proxies=proxies,
             timeout=20
         )
