@@ -78,6 +78,16 @@ CHROME_131_HEADERS = {
 
 print(f"Using ProxyJet rotating proxies with sticky sessions")
 
+# Safe int conversion for CSV fields that might be empty strings
+def safe_int(value, default=0):
+    """Convert value to int, handling empty strings and None"""
+    if not value or value == '':
+        return default
+    try:
+        return int(value)
+    except (ValueError, TypeError):
+        return default
+
 GRAPHQL_URL = "https://www.realtor.com/frontdoor/graphql"
 HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
@@ -785,8 +795,8 @@ def enrich_realtor_basic(lead):
         'phone': '',
         'brokeragePhone': '',
         'yearsExperience': 'Unknown',
-        'totalSales': int(lead.get('totalSales', 0)),
-        'sales12Months': int(lead.get('sales12Months', 0)),
+        'totalSales': safe_int(lead.get('totalSales', 0)),
+        'sales12Months': safe_int(lead.get('sales12Months', 0)),
         'reviewCount': 0,
         'title': '',
         'description': '',
@@ -817,7 +827,7 @@ def enrich_csv_lead_with_zillow(lead):
     city_state = lead.get('cityState', 'oklahoma-city-ok')
 
     # Get realtor.com 12mo sales from CSV for verification
-    realtor_12mo = int(lead.get('sales12Months', 0))
+    realtor_12mo = safe_int(lead.get('sales12Months', 0))
 
     print(f"Enriching: {first_name} {last_name}")
 
@@ -893,7 +903,7 @@ def enrich_realtor(lead):
     city_state = city_state_slug.lower().replace('_', '-')
 
     # Enrich with Zillow data (pass realtor 12mo sales for verification)
-    realtor_12mo = int(lead.get('sales12Months', 0))
+    realtor_12mo = safe_int(lead.get('sales12Months', 0))
     zillow_data = enrich_with_zillow(first_name, last_name, city_state, realtor_12mo)
 
     if zillow_data:
@@ -950,8 +960,8 @@ def enrich_realtor(lead):
             'phone': '',
             'brokeragePhone': '',
             'yearsExperience': 'Unknown',
-            'totalSales': int(lead.get('totalSales', 0)),
-            'sales12Months': int(lead.get('sales12Months', 0)),
+            'totalSales': safe_int(lead.get('totalSales', 0)),
+            'sales12Months': safe_int(lead.get('sales12Months', 0)),
             'reviewCount': 0,
             'title': '',
             'description': '',
