@@ -629,9 +629,8 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
             )
 
             if home_response.status_code != 200:
-                print(f"  Homepage failed: {home_response.status_code}, aborting")
                 session.close()
-                return None
+                raise Exception(f"Homepage returned {home_response.status_code}")
     
             print(f"  ✓ Homepage cookies collected")
             time.sleep(random.uniform(3.0, 5.0))  # Look like browsing
@@ -656,9 +655,8 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
             )
     
             if search_response.status_code != 200:
-                print(f"  Search failed: {search_response.status_code}, aborting")
                 session.close()
-                return None
+                raise Exception(f"Search returned {search_response.status_code}")
     
             print(f"  ✓ Search success! Status 200")
     
@@ -879,18 +877,24 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
             }
 
         except Exception as e:
-            error_msg = str(e).lower()
+            error_msg = str(e)
 
-            # Check if it's a retryable error (timeout or 403)
-            is_timeout = 'timeout' in error_msg or 'timed out' in error_msg
-            is_403 = '403' in error_msg or 'forbidden' in error_msg
+            # Check if it's a retryable error (timeout, 403, 429, 500s)
+            is_timeout = 'timeout' in error_msg.lower() or 'timed out' in error_msg.lower()
+            is_403 = '403' in error_msg
+            is_429 = '429' in error_msg
+            is_5xx = any(f'{code}' in error_msg for code in [500, 502, 503, 504])
 
             if is_timeout:
                 print(f"  ⏱️ Timeout error on attempt {attempt + 1}/{max_retries}")
             elif is_403:
-                print(f"  🚫 403 Forbidden error on attempt {attempt + 1}/{max_retries}")
+                print(f"  🚫 403 Forbidden on attempt {attempt + 1}/{max_retries}")
+            elif is_429:
+                print(f"  🚦 429 Rate Limited on attempt {attempt + 1}/{max_retries}")
+            elif is_5xx:
+                print(f"  ⚠️ Server error on attempt {attempt + 1}/{max_retries}")
 
-            if is_timeout or is_403:
+            if is_timeout or is_403 or is_429 or is_5xx:
                 if attempt < max_retries - 1:
                     print(f"  🔄 Retrying with new session and proxy...")
                     time.sleep(random.uniform(3.0, 6.0))  # Extra delay before retry
@@ -926,8 +930,7 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
         )
 
         if response.status_code != 200:
-            print(f"  Profile returned status {response.status_code}")
-            return None
+            raise Exception(f"Profile returned {response.status_code}")
 
         print(f"  ✓ Profile success! Status 200")
 
