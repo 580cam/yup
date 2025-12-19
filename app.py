@@ -879,6 +879,25 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
 
         soup = BeautifulSoup(response.content, 'html.parser')
 
+        # Parse social media links from HTML directly (JSON often missing them)
+        html_socials = {'facebook': '', 'linkedin': '', 'instagram': '', 'twitter': '', 'youtube': ''}
+
+        # Find all social media links in HTML
+        for link in soup.find_all('a', href=True):
+            href = link.get('href', '').lower()
+            if 'facebook.com' in href or 'fb.com' in href:
+                html_socials['facebook'] = link['href']
+            elif 'instagram.com' in href:
+                html_socials['instagram'] = link['href']
+            elif 'linkedin.com' in href:
+                html_socials['linkedin'] = link['href']
+            elif 'twitter.com' in href or 'x.com' in href:
+                html_socials['twitter'] = link['href']
+            elif 'youtube.com' in href:
+                html_socials['youtube'] = link['href']
+
+        print(f"  HTML parsed social links: FB={bool(html_socials['facebook'])}, IG={bool(html_socials['instagram'])}, LI={bool(html_socials['linkedin'])}")
+
         # Find __NEXT_DATA__ script
         script_tag = soup.find('script', {'id': '__NEXT_DATA__'})
         if not script_tag:
@@ -958,11 +977,18 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
             ('youtube', youtube_url)
         ]
 
-        # Remap if URL domain doesn't match field name
-        corrected_socials = {'facebook': '', 'linkedin': '', 'instagram': '', 'twitter': '', 'youtube': ''}
+        # Merge HTML and JSON social links (prefer HTML as it's more complete)
+        corrected_socials = {
+            'facebook': html_socials['facebook'] or facebook_url,
+            'linkedin': html_socials['linkedin'] or linkedin_url,
+            'instagram': html_socials['instagram'] or instagram_url,
+            'twitter': html_socials['twitter'] or twitter_url,
+            'youtube': html_socials['youtube'] or youtube_url
+        }
 
+        # Remap if URLs from JSON are mislabeled
         for field_name, url in all_socials:
-            if not url:
+            if not url or html_socials.get(field_name):  # Skip if HTML already has it
                 continue
 
             url_lower = url.lower()
@@ -970,19 +996,19 @@ def scrape_zillow_profile_journey(session, profile_url, search_url, proxies):
             # Detect actual platform from URL
             if 'instagram.com' in url_lower:
                 corrected_socials['instagram'] = url
-                print(f"  Found Instagram: {url}")
+                print(f"  Found Instagram (JSON): {url}")
             elif 'facebook.com' in url_lower or 'fb.com' in url_lower:
                 corrected_socials['facebook'] = url
-                print(f"  Found Facebook: {url}")
+                print(f"  Found Facebook (JSON): {url}")
             elif 'linkedin.com' in url_lower:
                 corrected_socials['linkedin'] = url
-                print(f"  Found LinkedIn: {url}")
+                print(f"  Found LinkedIn (JSON): {url}")
             elif 'twitter.com' in url_lower or 'x.com' in url_lower:
                 corrected_socials['twitter'] = url
-                print(f"  Found Twitter: {url}")
+                print(f"  Found Twitter (JSON): {url}")
             elif 'youtube.com' in url_lower:
                 corrected_socials['youtube'] = url
-                print(f"  Found YouTube: {url}")
+                print(f"  Found YouTube (JSON): {url}")
 
         result = {
             'email': clean_str(email),
