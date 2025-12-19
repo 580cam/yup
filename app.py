@@ -15,6 +15,10 @@ from openai import OpenAI
 
 app = Flask(__name__)
 
+# In-memory storage for active jobs
+active_jobs = {}
+import threading
+
 # Apify API credentials from environment
 APIFY_API_TOKEN = os.environ.get('APIFY_API_TOKEN', '')
 apify_client = ApifyClient(APIFY_API_TOKEN) if APIFY_API_TOKEN else None
@@ -273,79 +277,102 @@ def scrape():
     mode = data.get('mode')
     print(f"Mode: {mode}")
 
-    def generate():
-        """Stream results immediately - no batching"""
-        if mode == 'area':
-            areas = data.get('areas', [])
-            for area in areas:
-                enriched_count = 0
-                total_agents = 0
+    # Generate unique job ID
+    job_id = str(uuid.uuid4())[:8]
 
-                # Stream ALL agents (no limit!)
-                for agent in stream_agents_from_area(area):
-                    if agent is None:
-                        yield ": keepalive\n\n"
-                        continue
+    # Initialize job in memory
+    active_jobs[job_id] = {
+        'status': 'running',
+        'results': [],
+        'total': 0,
+        'completed': 0,
+        'error': None
+    }
 
-                    total_agents += 1
-                    enriched_count += 1
+    # Start background thread
+    def run_scraping():
+        try:
+            for result in generate_results(data, mode, job_id):
+                if result:
+                    active_jobs[job_id]['results'].append(result)
+                    active_jobs[job_id]['completed'] += 1
+            active_jobs[job_id]['status'] = 'complete'
+        except Exception as e:
+            active_jobs[job_id]['status'] = 'error'
+            active_jobs[job_id]['error'] = str(e)
+            print(f"Job {job_id} error: {e}")
+            import traceback
+            traceback.print_exc()
 
-                    try:
-                        print(f"========================================")
-                        print(f"ENRICHING AGENT #{enriched_count}")
-                        print(f"========================================")
+    thread = threading.Thread(target=run_scraping, daemon=True)
+    thread.start()
 
-                        # Send multiple keepalives to prevent timeout during long enrichment
-                        for _ in range(3):
-                            yield ": keepalive\n\n"
+    return jsonify({'job_id': job_id})
 
-                        # Enrich ALL agents with Zillow
-                        enriched = enrich_realtor(agent)
+@app.route('/api/status/<job_id>', methods=['GET'])
+def get_status(job_id):
+    if job_id not in active_jobs:
+        return jsonify({'error': 'Job not found'}), 404
 
-                        # Yield immediately!
-                        json_str = json.dumps(enriched, ensure_ascii=True, separators=(',', ':'))
-                        yield f"data: {json_str}\n\n"
+    job = active_jobs[job_id]
+    return jsonify({
+        'status': job['status'],
+        'results': job['results'],
+        'completed': job['completed'],
+        'total': job['total'],
+        'error': job['error']
+    })
 
-                    except Exception as e:
-                        print(f"Error encoding agent: {e}")
-                        continue
+def generate_results(data, mode, job_id):
+    """Generate results and store in active_jobs"""
+    if mode == 'area':
+        areas = data.get('areas', [])
+        for area in areas:
+            enriched_count = 0
 
-        elif mode == 'csv':
-            leads = data.get('leads', [])
-            print(f"Processing {len(leads)} leads from CSV for Zillow enrichment...")
-
-            for i, lead in enumerate(leads):
-                if not lead.get('firstName') or not lead.get('lastName'):
+            # Stream ALL agents (no limit!)
+            for agent in stream_agents_from_area(area):
+                if agent is None:
                     continue
+
+                enriched_count += 1
+                active_jobs[job_id]['total'] = enriched_count
 
                 try:
-                    print(f"")
                     print(f"========================================")
-                    print(f"ENRICHING CSV LEAD {i+1}/{len(leads)}")
+                    print(f"ENRICHING AGENT #{enriched_count}")
                     print(f"========================================")
 
-                    # Send multiple keepalives to prevent timeout during long enrichment
-                    for _ in range(3):
-                        yield ": keepalive\n\n"
-
-                    # CSV mode: ONLY Zillow enrichment (they already have realtor.com data)
-                    enriched = enrich_csv_lead_with_zillow(lead)
-
-                    json_str = json.dumps(enriched, ensure_ascii=True, separators=(',', ':'))
-                    yield f"data: {json_str}\n\n"
+                    # Enrich ALL agents with Zillow
+                    enriched = enrich_realtor(agent)
+                    yield enriched
 
                 except Exception as e:
-                    print(f"Error encoding lead: {e}")
+                    print(f"Error encoding agent: {e}")
                     continue
 
-        yield 'data: {"done":true}\n\n'
+    elif mode == 'csv':
+        leads = data.get('leads', [])
+        print(f"Processing {len(leads)} leads from CSV for Zillow enrichment...")
+        active_jobs[job_id]['total'] = len(leads)
 
-    return app.response_class(generate(), mimetype='text/event-stream', headers={
-        'Cache-Control': 'no-cache',
-        'X-Accel-Buffering': 'no',
-        'Connection': 'keep-alive',
-        'Keep-Alive': 'timeout=86400'
-    })
+        for i, lead in enumerate(leads):
+            if not lead.get('firstName') or not lead.get('lastName'):
+                continue
+
+            try:
+                print(f"")
+                print(f"========================================")
+                print(f"ENRICHING CSV LEAD {i+1}/{len(leads)}")
+                print(f"========================================")
+
+                # CSV mode: ONLY Zillow enrichment (they already have realtor.com data)
+                enriched = enrich_csv_lead_with_zillow(lead)
+                yield enriched
+
+            except Exception as e:
+                print(f"Error encoding lead: {e}")
+                continue
 
 def stream_agents_from_area(area):
     """Generator that yields agents one at a time as they're fetched"""

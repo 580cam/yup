@@ -238,10 +238,11 @@
         let abortController = null;
 
         function pauseSearch() {
-            if (abortController) {
-                abortController.abort();
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
                 hideProgress();
-                alert('Paused! Download your results below. Click search again to continue from where you left off.');
+                alert('Paused! Download your results below.');
             }
         }
 
@@ -258,57 +259,68 @@
             }
         }
 
+        let currentJobId = null;
+        let pollInterval = null;
+
         async function searchByArea() {
             const input = document.getElementById('area-input').value.trim();
             if (!input) return alert('Please enter at least one area');
 
             const areas = input.split(',').map(a => a.trim());
 
-            showProgress('Searching for realtors...');
-            // DON'T reset results - allows resume!
+            showProgress('Starting search...');
+            results = [];  // Reset results for new search
 
             try {
-                abortController = new AbortController();
-
+                // Start the job
                 const response = await fetch('/api/scrape', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mode: 'area', areas }),
-                    signal: abortController.signal
+                    body: JSON.stringify({ mode: 'area', areas })
                 });
 
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
+                const data = await response.json();
+                currentJobId = data.job_id;
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
+                console.log('Job started:', currentJobId);
 
-                    const chunk = decoder.decode(value);
-                    const lines = chunk.split('\n');
+                // Poll for results every 2 seconds
+                pollInterval = setInterval(pollResults, 2000);
 
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const data = JSON.parse(line.slice(6));
-                            if (data.done) {
-                                showProgress('Complete!');
-                            } else {
-                                // Single agent (no batching)
-                                results.push(data);
-                                showProgress(`Found ${results.length} realtors...`);
-                                displayResults();
-                            }
-                        }
-                    }
+            } catch (error) {
+                alert('Error starting search: ' + error.message);
+                hideProgress();
+            }
+        }
+
+        async function pollResults() {
+            if (!currentJobId) return;
+
+            try {
+                const response = await fetch(`/api/status/${currentJobId}`);
+                const data = await response.json();
+
+                // Update results (only add new ones)
+                if (data.results.length > results.length) {
+                    results = data.results;
+                    displayResults();
+                }
+
+                showProgress(`Enriched ${data.completed}/${data.total || '?'} agents...`);
+
+                // Check if done
+                if (data.status === 'complete') {
+                    clearInterval(pollInterval);
+                    showProgress('Complete!');
+                    setTimeout(hideProgress, 2000);
+                } else if (data.status === 'error') {
+                    clearInterval(pollInterval);
+                    alert('Error: ' + data.error);
+                    hideProgress();
                 }
             } catch (error) {
-                if (error.name === 'AbortError') {
-                    console.log('Search paused by user');
-                } else {
-                    alert('Error: ' + error.message);
-                }
-            } finally {
-                hideProgress();
+                console.error('Poll error:', error);
+                // Don't stop polling on error, just log it
             }
         }
 
@@ -318,7 +330,7 @@
             if (!file) return alert('Please select a CSV file');
 
             showProgress('Processing CSV...');
-            hideResults();
+            results = [];  // Reset results
 
             const text = await file.text();
             const lines = text.split('\n');
@@ -363,39 +375,23 @@
             }
 
             try {
+                // Start the job
                 const response = await fetch('/api/scrape', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ mode: 'csv', leads })
                 });
 
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                results = [];
+                const data = await response.json();
+                currentJobId = data.job_id;
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
+                console.log('CSV Job started:', currentJobId);
 
-                    const chunk = decoder.decode(value);
-                    const lines = chunk.split('\n');
+                // Poll for results every 2 seconds
+                pollInterval = setInterval(pollResults, 2000);
 
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            const data = JSON.parse(line.slice(6));
-                            if (data.done) {
-                                showProgress('Complete!');
-                            } else {
-                                results.push(data);
-                                showProgress(`Enriched ${results.length} leads...`);
-                                displayResults();
-                            }
-                        }
-                    }
-                }
             } catch (error) {
                 alert('Error: ' + error.message);
-            } finally {
                 hideProgress();
             }
         }
