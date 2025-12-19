@@ -896,11 +896,12 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
         except Exception as e:
             error_msg = str(e)
 
-            # Check if it's a retryable error (timeout, 403, 429, 500s)
+            # Check if it's a retryable error (timeout, 403, 429, 500s, proxy errors)
             is_timeout = 'timeout' in error_msg.lower() or 'timed out' in error_msg.lower()
             is_403 = '403' in error_msg
             is_429 = '429' in error_msg
             is_5xx = any(f'{code}' in error_msg for code in [500, 502, 503, 504])
+            is_proxy_error = 'proxy' in error_msg.lower() and ('aborted' in error_msg.lower() or 'connect' in error_msg.lower() or 'error' in error_msg.lower())
 
             if is_timeout:
                 print(f"  ⏱️ Timeout error on attempt {attempt + 1}/{max_retries}")
@@ -910,8 +911,10 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
                 print(f"  🚦 429 Rate Limited on attempt {attempt + 1}/{max_retries}")
             elif is_5xx:
                 print(f"  ⚠️ Server error on attempt {attempt + 1}/{max_retries}")
+            elif is_proxy_error:
+                print(f"  🔌 Proxy connection error on attempt {attempt + 1}/{max_retries}")
 
-            if is_timeout or is_403 or is_429 or is_5xx:
+            if is_timeout or is_403 or is_429 or is_5xx or is_proxy_error:
                 if attempt < max_retries - 1:
                     print(f"  🔄 Retrying with new session and proxy...")
                     time.sleep(random.uniform(3.0, 6.0))  # Extra delay before retry
