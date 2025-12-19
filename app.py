@@ -593,268 +593,268 @@ def enrich_with_zillow(first_name, last_name, city_state, realtor_12mo_sales):
             # Create FRESH session for this agent
             session = curl_requests.Session()
 
-        # STEP 1: Visit homepage (lander) to get cookies
-        print(f"  Step 1: Landing on homepage...")
-        home_headers = CHROME_131_HEADERS.copy()
-        home_headers['sec-fetch-site'] = 'none'  # Direct navigation
+            # STEP 1: Visit homepage (lander) to get cookies
+            print(f"  Step 1: Landing on homepage...")
+            home_headers = CHROME_131_HEADERS.copy()
+            home_headers['sec-fetch-site'] = 'none'  # Direct navigation
 
-        home_response = session.get(
-            'https://www.zillow.com/',
-            headers=home_headers,
-            impersonate="chrome131",
-            proxies=proxies,
-            timeout=20
-        )
+            home_response = session.get(
+                'https://www.zillow.com/',
+                headers=home_headers,
+                impersonate="chrome131",
+                proxies=proxies,
+                timeout=20
+            )
 
-        if home_response.status_code != 200:
-            print(f"  Homepage failed: {home_response.status_code}, aborting")
-            session.close()
-            return None
-
-        print(f"  ✓ Homepage cookies collected")
-        time.sleep(random.uniform(3.0, 5.0))  # Look like browsing
-
-        # STEP 2: Search for agent
-        full_name_realtor = f"{first_name} {last_name}".strip()
-        from urllib.parse import quote_plus
-        name_query = quote_plus(full_name_realtor)
-        search_url = f"https://www.zillow.com/professionals/real-estate-agent-reviews/{city_state.lower().replace(' ', '-')}/?name={name_query}"
-
-        print(f"  Step 2: Searching for {full_name_realtor}...")
-
-        search_headers = CHROME_131_HEADERS.copy()
-        search_headers['Referer'] = 'https://www.zillow.com/'
-
-        search_response = session.get(
-            search_url,
-            headers=search_headers,
-            impersonate="chrome131",
-            proxies=proxies,
-            timeout=20
-        )
-
-        if search_response.status_code != 200:
-            print(f"  Search failed: {search_response.status_code}, aborting")
-            session.close()
-            return None
-
-        print(f"  ✓ Search success! Status 200")
-
-        soup = BeautifulSoup(search_response.content, 'html.parser')
-
-        # Find __NEXT_DATA__ script tag with JSON
-        script_tag = soup.find('script', {'id': '__NEXT_DATA__'})
-        if not script_tag:
-            print("No __NEXT_DATA__ script found")
-            return None
-
-        data = json.loads(script_tag.string)
-
-        # Navigate to profile data
-        props = data.get('props', {}).get('pageProps', {}).get('displayData', {})
-        results = props.get('agentFinderGraphData', {}).get('agentDirectoryFinderDisplay', {}).get('searchResults', {}).get('results', {}).get('resultsCards', [])
-
-        print(f"Found {len(results)} Zillow results")
-
-        # Clean name for matching - remove punctuation, only keep letters and spaces
-        def clean_for_match(name):
-            import string
-            # Remove all punctuation except spaces
-            translator = str.maketrans('', '', string.punctuation)
-            cleaned = name.translate(translator)
-            # Normalize multiple spaces to single space
-            return ' '.join(cleaned.lower().split())
-
-        # ONE LOOP: Collect both exact and fuzzy matches
-        realtor_clean = clean_for_match(full_name_realtor)
-        print(f"  Looking for: '{realtor_clean}'")
-
-        exact_matches = []
-        fuzzy_matches = []
-
-        realtor_words = realtor_clean.split()
-        realtor_first = realtor_words[0] if realtor_words else ''
-        realtor_last = realtor_words[-1] if realtor_words else ''
-
-        # Single loop through all results
-        for card in results:
-            if card.get('__typename') != 'AgentDirectoryFinderProfileResultsCard':
-                continue
-
-            card_name = card.get('cardTitle', '')
-            zillow_clean = clean_for_match(card_name)
-
-            # Extract sales
-            profile_data_temp = card.get('profileData', [])
-            zillow_12mo = 0
-            for item in profile_data_temp:
-                if 'sales last 12 months' in item.get('label', '').lower():
-                    zillow_12mo = int(item.get('data') or 0)
-                    break
-
-            # Check EXACT match (bidirectional substring)
-            if realtor_clean in zillow_clean or zillow_clean in realtor_clean:
-                print(f"  EXACT: '{card_name}' - {zillow_12mo} sales")
-                exact_matches.append({'card': card, 'name': card_name, 'zillow_12mo': zillow_12mo})
-
-            # Also check FUZZY match (first 3 letters + last name)
-            else:
-                zillow_words = zillow_clean.split()
-                zillow_first = zillow_words[0] if zillow_words else ''
-                zillow_last = zillow_words[-1] if zillow_words else ''
-
-                if (realtor_last == zillow_last and
-                    len(realtor_first) >= 3 and len(zillow_first) >= 3 and
-                    (realtor_first[:3] == zillow_first[:3])):
-                    print(f"  FUZZY: '{card_name}' - {zillow_12mo} sales")
-                    fuzzy_matches.append({'card': card, 'name': card_name, 'zillow_12mo': zillow_12mo})
-
-        # DECISION TREE:
-        # 1. Try exact matches with sales within 10
-        # 2. Try fuzzy matches with sales within 10
-        # 3. Use first exact match
-        # 4. Give up
-
-        best_match = None
-
-        # Check exact matches first
-        for match in exact_matches:
-            if abs(match['zillow_12mo'] - realtor_12mo_sales) <= 10:
-                best_match = match
-                print(f"  ✓ Using EXACT match with verified sales: {match['name']} (diff={abs(match['zillow_12mo'] - realtor_12mo_sales)})")
-                break
-
-        # If no good exact, try fuzzy
-        if not best_match:
-            for match in fuzzy_matches:
+            if home_response.status_code != 200:
+                print(f"  Homepage failed: {home_response.status_code}, aborting")
+                session.close()
+                return None
+    
+            print(f"  ✓ Homepage cookies collected")
+            time.sleep(random.uniform(3.0, 5.0))  # Look like browsing
+    
+            # STEP 2: Search for agent
+            full_name_realtor = f"{first_name} {last_name}".strip()
+            from urllib.parse import quote_plus
+            name_query = quote_plus(full_name_realtor)
+            search_url = f"https://www.zillow.com/professionals/real-estate-agent-reviews/{city_state.lower().replace(' ', '-')}/?name={name_query}"
+    
+            print(f"  Step 2: Searching for {full_name_realtor}...")
+    
+            search_headers = CHROME_131_HEADERS.copy()
+            search_headers['Referer'] = 'https://www.zillow.com/'
+    
+            search_response = session.get(
+                search_url,
+                headers=search_headers,
+                impersonate="chrome131",
+                proxies=proxies,
+                timeout=20
+            )
+    
+            if search_response.status_code != 200:
+                print(f"  Search failed: {search_response.status_code}, aborting")
+                session.close()
+                return None
+    
+            print(f"  ✓ Search success! Status 200")
+    
+            soup = BeautifulSoup(search_response.content, 'html.parser')
+    
+            # Find __NEXT_DATA__ script tag with JSON
+            script_tag = soup.find('script', {'id': '__NEXT_DATA__'})
+            if not script_tag:
+                print("No __NEXT_DATA__ script found")
+                return None
+    
+            data = json.loads(script_tag.string)
+    
+            # Navigate to profile data
+            props = data.get('props', {}).get('pageProps', {}).get('displayData', {})
+            results = props.get('agentFinderGraphData', {}).get('agentDirectoryFinderDisplay', {}).get('searchResults', {}).get('results', {}).get('resultsCards', [])
+    
+            print(f"Found {len(results)} Zillow results")
+    
+            # Clean name for matching - remove punctuation, only keep letters and spaces
+            def clean_for_match(name):
+                import string
+                # Remove all punctuation except spaces
+                translator = str.maketrans('', '', string.punctuation)
+                cleaned = name.translate(translator)
+                # Normalize multiple spaces to single space
+                return ' '.join(cleaned.lower().split())
+    
+            # ONE LOOP: Collect both exact and fuzzy matches
+            realtor_clean = clean_for_match(full_name_realtor)
+            print(f"  Looking for: '{realtor_clean}'")
+    
+            exact_matches = []
+            fuzzy_matches = []
+    
+            realtor_words = realtor_clean.split()
+            realtor_first = realtor_words[0] if realtor_words else ''
+            realtor_last = realtor_words[-1] if realtor_words else ''
+    
+            # Single loop through all results
+            for card in results:
+                if card.get('__typename') != 'AgentDirectoryFinderProfileResultsCard':
+                    continue
+    
+                card_name = card.get('cardTitle', '')
+                zillow_clean = clean_for_match(card_name)
+    
+                # Extract sales
+                profile_data_temp = card.get('profileData', [])
+                zillow_12mo = 0
+                for item in profile_data_temp:
+                    if 'sales last 12 months' in item.get('label', '').lower():
+                        zillow_12mo = int(item.get('data') or 0)
+                        break
+    
+                # Check EXACT match (bidirectional substring)
+                if realtor_clean in zillow_clean or zillow_clean in realtor_clean:
+                    print(f"  EXACT: '{card_name}' - {zillow_12mo} sales")
+                    exact_matches.append({'card': card, 'name': card_name, 'zillow_12mo': zillow_12mo})
+    
+                # Also check FUZZY match (first 3 letters + last name)
+                else:
+                    zillow_words = zillow_clean.split()
+                    zillow_first = zillow_words[0] if zillow_words else ''
+                    zillow_last = zillow_words[-1] if zillow_words else ''
+    
+                    if (realtor_last == zillow_last and
+                        len(realtor_first) >= 3 and len(zillow_first) >= 3 and
+                        (realtor_first[:3] == zillow_first[:3])):
+                        print(f"  FUZZY: '{card_name}' - {zillow_12mo} sales")
+                        fuzzy_matches.append({'card': card, 'name': card_name, 'zillow_12mo': zillow_12mo})
+    
+            # DECISION TREE:
+            # 1. Try exact matches with sales within 10
+            # 2. Try fuzzy matches with sales within 10
+            # 3. Use first exact match
+            # 4. Give up
+    
+            best_match = None
+    
+            # Check exact matches first
+            for match in exact_matches:
                 if abs(match['zillow_12mo'] - realtor_12mo_sales) <= 10:
                     best_match = match
-                    print(f"  ✓ Using FUZZY match with verified sales: {match['name']} (diff={abs(match['zillow_12mo'] - realtor_12mo_sales)})")
+                    print(f"  ✓ Using EXACT match with verified sales: {match['name']} (diff={abs(match['zillow_12mo'] - realtor_12mo_sales)})")
                     break
-
-        # Fallback to first exact
-        if not best_match and exact_matches:
-            best_match = exact_matches[0]
-            print(f"  Using first EXACT match (no sales match): {best_match['name']}")
-
-        if not best_match and fuzzy_matches:
-            best_match = fuzzy_matches[0]
-            print(f"  Using first FUZZY match (no sales match): {best_match['name']}")
-
-        if not best_match:
-            print(f"No matches found for '{full_name_realtor}'")
-            return None
-
-        # Extract profile data from matched card
-        matched_card = best_match['card']
-        profile_data = matched_card.get('profileData', [])
-        zillow_url = matched_card.get('cardActionLink', '')
-
-        print(f"Zillow URL: {zillow_url}")
-
-        # Parse sales data
-        total_sales_in_city = 0
-        sales_last_12mo = 0
-
-        for item in profile_data:
-            label = item.get('label', '').lower()
-            data_val = item.get('data')
-
-            if 'sales in' in label and data_val:
-                total_sales_in_city = int(data_val)
-                print(f"  Total sales: {total_sales_in_city}")
-            elif 'sales last 12 months' in label and data_val:
-                sales_last_12mo = int(data_val)
-                print(f"  12mo sales: {sales_last_12mo}")
-
-        # STEP 3: Visit profile page
-        delay = random.uniform(8.0, 15.0)
-        print(f"  Step 3: Waiting {delay:.1f}s before clicking profile...")
-        time.sleep(delay)
-
-        # Scrape profile using SAME session
-        profile_data = scrape_zillow_profile_journey(session, zillow_url, search_url, proxies)
-
-        # Close session
-        session.close()
-
-        if profile_data:
-            result = {
-                **profile_data,  # Merge profile data first
-                'zillowUrl': zillow_url,  # Override with correct URL
+    
+            # If no good exact, try fuzzy
+            if not best_match:
+                for match in fuzzy_matches:
+                    if abs(match['zillow_12mo'] - realtor_12mo_sales) <= 10:
+                        best_match = match
+                        print(f"  ✓ Using FUZZY match with verified sales: {match['name']} (diff={abs(match['zillow_12mo'] - realtor_12mo_sales)})")
+                        break
+    
+            # Fallback to first exact
+            if not best_match and exact_matches:
+                best_match = exact_matches[0]
+                print(f"  Using first EXACT match (no sales match): {best_match['name']}")
+    
+            if not best_match and fuzzy_matches:
+                best_match = fuzzy_matches[0]
+                print(f"  Using first FUZZY match (no sales match): {best_match['name']}")
+    
+            if not best_match:
+                print(f"No matches found for '{full_name_realtor}'")
+                return None
+    
+            # Extract profile data from matched card
+            matched_card = best_match['card']
+            profile_data = matched_card.get('profileData', [])
+            zillow_url = matched_card.get('cardActionLink', '')
+    
+            print(f"Zillow URL: {zillow_url}")
+    
+            # Parse sales data
+            total_sales_in_city = 0
+            sales_last_12mo = 0
+    
+            for item in profile_data:
+                label = item.get('label', '').lower()
+                data_val = item.get('data')
+    
+                if 'sales in' in label and data_val:
+                    total_sales_in_city = int(data_val)
+                    print(f"  Total sales: {total_sales_in_city}")
+                elif 'sales last 12 months' in label and data_val:
+                    sales_last_12mo = int(data_val)
+                    print(f"  12mo sales: {sales_last_12mo}")
+    
+            # STEP 3: Visit profile page
+            delay = random.uniform(8.0, 15.0)
+            print(f"  Step 3: Waiting {delay:.1f}s before clicking profile...")
+            time.sleep(delay)
+    
+            # Scrape profile using SAME session
+            profile_data = scrape_zillow_profile_journey(session, zillow_url, search_url, proxies)
+    
+            # Close session
+            session.close()
+    
+            if profile_data:
+                result = {
+                    **profile_data,  # Merge profile data first
+                    'zillowUrl': zillow_url,  # Override with correct URL
+                    'totalSalesInCity': total_sales_in_city,
+                    'sales12Months': sales_last_12mo
+                }
+    
+                # Check for missing social media and search with Apify + AI
+                missing_instagram = not result.get('instagramUrl', '')
+                missing_facebook = not result.get('facebookUrl', '')
+    
+                print(f"")
+                print(f"========== SOCIAL MEDIA CHECK ==========")
+                print(f"  Instagram: {'MISSING' if missing_instagram else 'FOUND'}")
+                print(f"  Facebook: {'MISSING' if missing_facebook else 'FOUND'}")
+    
+                if missing_instagram or missing_facebook:
+                    if not apify_client or not openai_client:
+                        print(f"  ⚠ AI search disabled - missing API keys")
+                    else:
+                        agent_info = {
+                            'firstName': first_name,
+                            'lastName': last_name,
+                            'city': city_state
+                        }
+    
+                        # Search for Instagram if missing
+                        if missing_instagram:
+                            print(f"")
+                            print(f"  🔍 Starting Instagram search...")
+                            instagram_results = search_social_media_with_apify(
+                                f"{first_name} {last_name}",
+                                city_state,
+                                "instagram"
+                            )
+                            if instagram_results:
+                                print(f"  🤖 Sending {len(instagram_results)} results to AI for matching...")
+                                matched_instagram = match_social_profile_with_ai(agent_info, instagram_results, "instagram")
+                                if matched_instagram:
+                                    result['instagramUrl'] = matched_instagram
+                                    print(f"  ✅ Instagram added: {matched_instagram}")
+                                else:
+                                    print(f"  ❌ AI found no confident Instagram match")
+                            else:
+                                print(f"  ❌ No Instagram results from Apify")
+    
+                        # Search for Facebook if missing
+                        if missing_facebook:
+                            print(f"")
+                            print(f"  🔍 Starting Facebook search...")
+                            facebook_results = search_social_media_with_apify(
+                                f"{first_name} {last_name}",
+                                city_state,
+                                "facebook"
+                            )
+                            if facebook_results:
+                                print(f"  🤖 Sending {len(facebook_results)} results to AI for matching...")
+                                matched_facebook = match_social_profile_with_ai(agent_info, facebook_results, "facebook")
+                                if matched_facebook:
+                                    result['facebookUrl'] = matched_facebook
+                                    print(f"  ✅ Facebook added: {matched_facebook}")
+                                else:
+                                    print(f"  ❌ AI found no confident Facebook match")
+                            else:
+                                print(f"  ❌ No Facebook results from Apify")
+    
+                print(f"========================================")
+                print(f"")
+    
+                return result
+    
+            return {
+                'zillowUrl': zillow_url,
                 'totalSalesInCity': total_sales_in_city,
                 'sales12Months': sales_last_12mo
             }
-
-            # Check for missing social media and search with Apify + AI
-            missing_instagram = not result.get('instagramUrl', '')
-            missing_facebook = not result.get('facebookUrl', '')
-
-            print(f"")
-            print(f"========== SOCIAL MEDIA CHECK ==========")
-            print(f"  Instagram: {'MISSING' if missing_instagram else 'FOUND'}")
-            print(f"  Facebook: {'MISSING' if missing_facebook else 'FOUND'}")
-
-            if missing_instagram or missing_facebook:
-                if not apify_client or not openai_client:
-                    print(f"  ⚠ AI search disabled - missing API keys")
-                else:
-                    agent_info = {
-                        'firstName': first_name,
-                        'lastName': last_name,
-                        'city': city_state
-                    }
-
-                    # Search for Instagram if missing
-                    if missing_instagram:
-                        print(f"")
-                        print(f"  🔍 Starting Instagram search...")
-                        instagram_results = search_social_media_with_apify(
-                            f"{first_name} {last_name}",
-                            city_state,
-                            "instagram"
-                        )
-                        if instagram_results:
-                            print(f"  🤖 Sending {len(instagram_results)} results to AI for matching...")
-                            matched_instagram = match_social_profile_with_ai(agent_info, instagram_results, "instagram")
-                            if matched_instagram:
-                                result['instagramUrl'] = matched_instagram
-                                print(f"  ✅ Instagram added: {matched_instagram}")
-                            else:
-                                print(f"  ❌ AI found no confident Instagram match")
-                        else:
-                            print(f"  ❌ No Instagram results from Apify")
-
-                    # Search for Facebook if missing
-                    if missing_facebook:
-                        print(f"")
-                        print(f"  🔍 Starting Facebook search...")
-                        facebook_results = search_social_media_with_apify(
-                            f"{first_name} {last_name}",
-                            city_state,
-                            "facebook"
-                        )
-                        if facebook_results:
-                            print(f"  🤖 Sending {len(facebook_results)} results to AI for matching...")
-                            matched_facebook = match_social_profile_with_ai(agent_info, facebook_results, "facebook")
-                            if matched_facebook:
-                                result['facebookUrl'] = matched_facebook
-                                print(f"  ✅ Facebook added: {matched_facebook}")
-                            else:
-                                print(f"  ❌ AI found no confident Facebook match")
-                        else:
-                            print(f"  ❌ No Facebook results from Apify")
-
-            print(f"========================================")
-            print(f"")
-
-            return result
-
-        return {
-            'zillowUrl': zillow_url,
-            'totalSalesInCity': total_sales_in_city,
-            'sales12Months': sales_last_12mo
-        }
 
     except Exception as e:
         error_msg = str(e).lower()
