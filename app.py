@@ -833,6 +833,7 @@ def enrich_csv_lead_with_zillow(lead):
             'brokeragePhone': zillow_data.get('brokeragePhone', ''),
             'yearsExperience': f"{zillow_data.get('yearsExperience', 0)} years" if zillow_data.get('yearsExperience') else lead.get('yearsExperience', 'Unknown'),
             'totalSales': zillow_data.get('totalSalesAllTime', lead.get('totalSales', 0)),
+            'sales12Months': zillow_data.get('sales12Months', lead.get('sales12Months', 0)),
             'reviewCount': zillow_data.get('reviewCount', 0),
             'title': zillow_data.get('title', ''),
             'description': zillow_data.get('description', ''),
