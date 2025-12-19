@@ -845,6 +845,8 @@ def enrich_csv_lead_with_zillow(lead):
             'websiteUrl': zillow_data.get('websiteUrl', ''),
             'latestSaleAddress': zillow_data.get('latestSaleAddress', ''),
             'latestSaleDate': zillow_data.get('latestSaleDate', ''),
+            'avgHomeValue': lead.get('avgHomeValue', 'N/A'),  # Preserve from CSV
+            'profileUrl': lead.get('profileUrl', ''),  # Preserve from CSV
             'zillowUrl': zillow_data.get('zillowUrl', ''),
             'socialMedia': {
                 'facebook': zillow_data.get('facebookUrl', ''),
